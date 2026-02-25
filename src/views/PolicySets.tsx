@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { C } from "../theme";
 import { POLICY_SETS_SEED, POLICY_REQS } from "../data";
 import { useVersion } from "../components/UI";
+import { PolicySetDrawer } from "../components/PolicySetDrawer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TASK_TYPES  = ["Regulatory", "Org"];
@@ -237,6 +238,7 @@ export function PolicySets() {
   const [dragging,   setDragging]   = useState<{ psId: string; idx: number } | null>(null);
   const [dragOver,   setDragOver]   = useState<number | null>(null);
   const [showModal,  setShowModal]  = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
 
   const handleDrop = (e: React.DragEvent, psId: string, toIdx: number) => {
     e.preventDefault();
@@ -248,12 +250,13 @@ export function PolicySets() {
     setDragging(null); setDragOver(null);
   };
 
-  const handleSavePS = ({ name, tasks }: { name: string; tasks: any[] }) => {
-    const id = `ps-${Date.now()}`;
-    setCustomSets(prev => [...prev, { id, name, tasks, orgWide: false }]);
-    setExpanded(id);
-    setShowModal(false);
-  };
+const handleSavePS = ({ name, tasks, gwbrIds, states, products }: { name: string; tasks?: any[]; gwbrIds?: number[]; states?: string[]; products?: string[] }) => {
+  const id = `ps-${Date.now()}`;
+  setCustomSets(prev => [...prev, { id, name, tasks: tasks || [], gwbrIds: gwbrIds || [], states: states || [], products: products || [], orgWide: false }]);
+  setExpanded(id);
+  setShowDrawer(false);
+  setShowModal(false);
+};
 
   const allSets = [...POLICY_SETS_SEED, ...customSets];
 
@@ -265,7 +268,7 @@ export function PolicySets() {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Policy Sets</h2>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Define onboarding requirement groups</p>
         </div>
-        <button onClick={() => setShowModal(true)}
+        <button onClick={() => setShowDrawer(true)}
           style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
           {isAI && <span style={{ fontSize: 12 }}>✦</span>}+ New Policy Set
         </button>
@@ -327,8 +330,13 @@ export function PolicySets() {
           );
         })}
       </div>
-
-      {showModal && <PolicySetModal onClose={() => setShowModal(false)} onSave={handleSavePS} />}
+        {showModal && <PolicySetModal onClose={() => setShowModal(false)} onSave={handleSavePS} />}
+        <PolicySetDrawer
+          open={showDrawer}
+          onClose={() => setShowDrawer(false)}
+          isPlus={isPlus}
+          onSave={handleSavePS}
+        />
     </div>
   );
 }

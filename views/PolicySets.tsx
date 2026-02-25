@@ -268,7 +268,7 @@ const handleSavePS = ({ name, tasks, gwbrIds, states, products }: { name: string
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Policy Sets</h2>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Define onboarding requirement groups</p>
         </div>
-        <button onClick={() => isPlus ? setShowDrawer(true) : setShowModal(true)}
+        <button onClick={() => setShowDrawer(true)}
           style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
           {isAI && <span style={{ fontSize: 12 }}>✦</span>}+ New Policy Set
         </button>
