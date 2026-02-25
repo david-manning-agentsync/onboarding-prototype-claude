@@ -618,7 +618,7 @@ function TaskEditor({
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Owner</div>
-                <SegToggle options={[["producer","Producer"],["internal","Internal"]]} value={task.owner} onChange={v => onChange({ ...task, owner: v as OwnerType })} />
+                <SegToggle options={[["producer","Producer"],["Operations","Operations"]]} value={task.owner} onChange={v => onChange({ ...task, owner: v as OwnerType })} />
               </div>
             </div>
             <div>
