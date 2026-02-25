@@ -10,6 +10,7 @@ type OwnerType = "producer" | "internal";
 type ApprovalType = "yes" | "no";
 type ComponentType = "text" | "video" | "file" | "freetext" | "picklist" | "boolean" | "fileupload" | "signature";
 type TabType = "selected" | "unselected" | "all";
+type ViewMode = "byProduct" | "byState";
 
 interface ComponentConfig {
   label?: string;
@@ -145,6 +146,10 @@ const SecBtn = ({
     background: C.bg, border: `1px solid ${C.border}`,
     borderRadius: 8, padding: "8px 16px", cursor: "pointer", ...style,
   }}>{children}</button>
+);
+
+const Chip = ({ label }: { label: string }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 500, color: C.accent, background: C.accentBg, border: `1px solid ${C.accentLight}44`, borderRadius: 6, padding: "2px 8px" }}>{label}</span>
 );
 
 const SegToggle = ({
