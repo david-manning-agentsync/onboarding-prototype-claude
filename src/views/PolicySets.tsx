@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { C } from "../theme";
 import { useVersion } from "../components/UI";
 import { PolicySetDrawer } from "../components/PolicySetDrawer";
+import type { PolicySetDrawerProps } from "../components/PolicySetDrawer";
+type SavePayload = Parameters<PolicySetDrawerProps["onSave"]>[0];
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
 const SEED = [
@@ -394,7 +396,7 @@ export function PolicySets() {
         open={showDrawer}
         onClose={() => setShowDrawer(false)}
         isPlus={isPostMVP}
-        onSave={({ name, gwbrIds, states, products, tasks }) => {
+        onSave={({ name, gwbrIds, tasks }: SavePayload) => {
           const id = `ps-${Date.now()}`;
           setData(prev => [...prev, {
             id,
