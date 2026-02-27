@@ -6,7 +6,7 @@ import { C } from "../theme";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TaskType = "internal" | "external";
-type OwnerType = "producer" | "internal";
+type OwnerType = "producer" | "operations";
 type ApprovalType = "yes" | "no";
 type ComponentType = "text" | "video" | "file" | "freetext" | "picklist" | "boolean" | "fileupload" | "signature";
 type TabType = "selected" | "unselected" | "all";
@@ -56,7 +56,7 @@ export interface PolicySetDrawerProps {
   open: boolean;
   onClose: () => void;
   isPlus?: boolean;
-  onSave: (ps: { name: string; gwbrIds: number[]; states: string[]; products: string[]; tasks: Task[] }) => void;
+  onSave: (ps: { name: string; gwbrIds: number[]; states: string[]; products: string[]; tasks: Task[]; requiredForAll: boolean }) => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -623,7 +623,7 @@ function TaskEditor({
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Owner</div>
-                <SegToggle options={[["producer","Producer"],["internal","Internal"]]} value={task.owner} onChange={v => onChange({ ...task, owner: v as OwnerType })} />
+                <SegToggle options={[["producer","Producer"],["operations","Operations"]]} value={task.owner} onChange={v => onChange({ ...task, owner: v as OwnerType })} />
               </div>
             </div>
             <div>
@@ -668,7 +668,7 @@ const TYPE_COLORS: Record<TaskType, { bg: string; text: string; border: string }
   internal: { bg: "#eff6ff", text: "#2563eb", border: "#bfdbfe" },
   external: { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0" },
 };
-const OWNER_LABEL: Record<OwnerType, string> = { producer: "Producer", internal: "Internal" };
+const OWNER_LABEL: Record<OwnerType, string> = { producer: "Producer", operations: "Operations" };
 
 function TaskSequencer({
   tasks, onChangeTasks, onConfirm, onAddTask, onEditTask,
@@ -736,6 +736,7 @@ function TaskSequencer({
 export function PolicySetDrawer({ open, onClose, isPlus = true, onSave }: PolicySetDrawerProps) {
   const [view, setView]               = useState("main");
   const [psName, setPsName]           = useState("");
+  const [requiredForAll, setRequiredForAll] = useState(false);
   const [states, setStates]           = useState<string[]>([]);
   const [products, setProducts]       = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -747,6 +748,7 @@ export function PolicySetDrawer({ open, onClose, isPlus = true, onSave }: Policy
 
   const resetAll = () => {
     setView("main"); setPsName("");
+    setRequiredForAll(false);
     setStates([]); setProducts([]); setSelectedIds([]); setRegDone(false);
     setTasks([]); setOrgDone(false); setEditingTask(null); setIsNewTask(false);
   };
@@ -760,7 +762,7 @@ export function PolicySetDrawer({ open, onClose, isPlus = true, onSave }: Policy
   };
 
   const handleSave = () => {
-    onSave({ name: psName, gwbrIds: selectedIds, states, products, tasks });
+    onSave({ name: psName, gwbrIds: selectedIds, states, products, tasks, requiredForAll });
     resetAll();
   };
 
@@ -806,6 +808,13 @@ export function PolicySetDrawer({ open, onClose, isPlus = true, onSave }: Policy
           <div>
             <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 6 }}>Policy set name <span style={{ color: C.danger }}>*</span></div>
             <input value={psName} onChange={e => setPsName(e.target.value)} placeholder="e.g. Licensed P&C Producer" style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+          </div>
+
+          <div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={requiredForAll} onChange={e => setRequiredForAll(e.target.checked)} style={{ width: 18, height: 18, cursor: "pointer" }} />
+              <span style={{ fontSize: 13, fontWeight: 500, color: C.text }}>Required for all clients</span>
+            </label>
           </div>
 
           <div>
