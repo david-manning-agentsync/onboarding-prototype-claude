@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Drawer } from "./Drawer";
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 import { C } from "../theme";
@@ -166,36 +167,6 @@ const SegToggle = ({
     ))}
   </div>
 );
-
-// ─── Drawer shell ─────────────────────────────────────────────────────────────
-
-function Drawer({
-  open, onClose, title, subtitle, onBack, children,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  subtitle?: string;
-  onBack?: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.18)", zIndex: 70, opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none", transition: "opacity .2s" }} />
-      <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 520, background: C.surface, boxShadow: "-8px 0 40px rgba(0,0,0,0.12)", zIndex: 71, transform: open ? "translateX(0)" : "translateX(520px)", transition: "transform .25s cubic-bezier(.4,0,.2,1)", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "18px 24px 14px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
-          {onBack && <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 18, padding: "2px 6px", borderRadius: 6 }}>←</button>}
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{title}</div>
-            {subtitle && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{subtitle}</div>}
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 18, padding: 4 }}>✕</button>
-        </div>
-        <div style={{ flex: 1, overflowY: "auto" }}>{children}</div>
-      </div>
-    </>
-  );
-}
 
 // ─── Reg: State selector ──────────────────────────────────────────────────────
 

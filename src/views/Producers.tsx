@@ -1,17 +1,51 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { C, Badge } from "../theme";
 import type { Producer, SavedView } from "../data";
-import { useVersion, Input, ActiveFilters, FilterDrawer, Table, BulkBar, SaveViewModal } from "../components/UI";
-import { AICommandBar, AIResultBanner } from "../components/AI";
+import { useVersion, ActiveFilters } from "../components/UI";
+import { SearchBar } from "../components/SearchBar";
+import { FilterDrawer } from "../components/FilterDrawer";
+import { Table } from "../components/Table";
+import { SaveViewModal } from "../components/SaveViewModal";
+import { AIChat } from "../components/AIChat";
+import type { AIChatMessage, AIChatAction } from "../components/AIChat";
+import { BottomBar } from "../components/BottomBar";
 import { TaskDrawer } from "../components/TaskDrawer";
 import { InviteDrawer, BulkInviteDrawer } from "../components/InviteDrawers";
 
-// ─── Filter Definitions ───────────────────────────────────────────────────────
 const PROD_FILTER_DEFS = [
   { key: "classification", label: "Classification", options: ["Needs License", "Needs LOAs", "Reg Tasks Only", "Org Requirements"] },
   { key: "status",         label: "Status",         options: ["Invited", "In Progress", "Waiting/Blocked", "Completed", "Terminated"] },
   { key: "resident",       label: "Resident State", options: ["AZ","CA","CO","FL","GA","IL","MI","MN","NC","NJ","NY","OH","PA","TN","TX","WA"] },
 ];
+
+const AI_PROMPTS = [
+  "Show producers with no activity in 60 days",
+  "Find all invited producers in California",
+  "Filter to waiting or blocked producers needing license",
+  "Show producers ready to terminate",
+];
+
+async function callClaude(msg: string): Promise<any> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: `You are an AI assistant in an insurance producer onboarding platform. 
+Return JSON only — no prose, no markdown fences.
+{"target":"producers","filters":{"status":[],"classification":[],"resident":[]},"action":null|"terminate"|"assign_policy_set"|"send_reminder","actionLabel":null|string,"summary":string}
+Valid status: Invited, In Progress, Waiting/Blocked, Completed, Terminated
+Valid classification: Needs License, Needs LOAs, Reg Tasks Only, Org Requirements
+Valid resident: two-letter US state codes
+summary should be a short human-readable explanation.`,
+      messages: [{ role: "user", content: msg }],
+    }),
+  });
+  const data = await res.json();
+  const txt = data.content?.find((b: any) => b.type === "text")?.text || "{}";
+  return JSON.parse(txt.replace(/```json|```/g, "").trim());
+}
 
 // ─── Producer Detail ──────────────────────────────────────────────────────────
 export function ProducerDetail({ producer: init, onBack, allProducers, setAllProducers }: {
@@ -46,15 +80,12 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        {/* Back + title */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={onBack} style={{ background: "none", border: "none", color: C.accentLight, cursor: "pointer", fontSize: 13, padding: 0, fontWeight: 500 }}>← Back</button>
           <span style={{ color: C.border }}>|</span>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.text }}>{producer.name}</h2>
           <Badge label={producer.status} /><Badge label={producer.classification} />
         </div>
-
-        {/* Meta cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
           {([["NPN", producer.npn], ["Resident State", producer.resident], ["Invited", producer.invited], ["Last Activity", producer.lastTask]] as [string, string][]).map(([l, v]) => (
             <div key={l} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
@@ -63,8 +94,6 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
             </div>
           ))}
         </div>
-
-        {/* Tabs */}
         {tabs.length > 1 && (
           <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.border}` }}>
             {tabs.map(t => (
@@ -75,8 +104,6 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
             ))}
           </div>
         )}
-
-        {/* Tasks tab */}
         {activeTab === "tasks" && (
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -108,8 +135,6 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
             </div>
           </div>
         )}
-
-        {/* Activity tab */}
         {activeTab === "activity" && (version === "post-mvp" || version === "ai") && (
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 16 }}>Activity Log</div>
@@ -133,14 +158,11 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
           </div>
         )}
       </div>
-
       <TaskDrawer
-        task={drawerTask}
-        producer={producer}
+        task={drawerTask} producer={producer}
         onClose={() => setDrawerTaskId(null)}
         onUpdate={patch => updateTask(drawerTaskId!, patch)}
-        hasPrev={drawerIdx > 0}
-        hasNext={drawerIdx < tasks.length - 1}
+        hasPrev={drawerIdx > 0} hasNext={drawerIdx < tasks.length - 1}
         onPrev={() => setDrawerTaskId(tasks[drawerIdx - 1].id)}
         onNext={() => setDrawerTaskId(tasks[drawerIdx + 1].id)} />
     </>
@@ -168,8 +190,9 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
   const [inviteMenuOpen, setInviteMenuOpen] = useState(false);
   const [selected,       setSelected]       = useState<Set<number>>(new Set());
   const [saveOpen,       setSaveOpen]       = useState(false);
-  const [aiCollapsed,    setAiCollapsed]    = useState(false);
-  const [aiResult,       setAiResult]       = useState<any>(null);
+  const [aiOpen,         setAiOpen]         = useState(isAI);
+  const [aiFilterIds,    setAiFilterIds]    = useState<string[] | null>(null);
+  const [pendingAction,  setPendingAction]  = useState<AIChatAction | null>(null);
   const inviteMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -182,9 +205,6 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
     if (initFilter && Object.keys(initFilter).length > 0) { setApplied(initFilter); setPending(initFilter); }
   }, [initFilter]);
 
-  const activeCount = Object.values(applied).filter(v => v?.length > 0).length;
-  const hasFilters  = activeCount > 0 || search;
-
   const filtered = useMemo(() => producers.filter(p => {
     const q = search.toLowerCase();
     return (!q || p.name.toLowerCase().includes(q) || p.npn.includes(q))
@@ -193,34 +213,53 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
       && (!applied.resident?.length       || applied.resident.includes(p.resident));
   }), [search, applied, producers]);
 
-  const toggleOne = (id: number) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = (rows: Producer[]) => { const allS = rows.every(r => selected.has(r.id)); setSelected(allS ? new Set() : new Set(rows.map(r => r.id))); };
+  const activeCount  = Object.values(applied).filter(v => v?.length > 0).length;
+  const hasFilters   = activeCount > 0 || !!search;
+  const selCount     = filtered.filter(p => selected.has(p.id)).length;
   const clearFilters = () => { setApplied({}); setPending({}); };
 
-  const handleAIResult = (res: any) => {
-    if (res.target !== "producers") return;
-    const f: Record<string, string[]> = {};
-    if (res.filters?.status?.length)         f.status         = res.filters.status;
-    if (res.filters?.classification?.length) f.classification = res.filters.classification;
-    if (res.filters?.resident?.length)       f.resident       = res.filters.resident;
-    setApplied(f);
-    setAiResult(res);
+  const toggleOne = (id: number) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = (rows: Producer[]) => { const allS = rows.every(r => selected.has(r.id)); setSelected(allS ? new Set() : new Set(rows.map(r => r.id))); };
+
+  const handleAiFilter = (ids: string[] | null) => {
+    setAiFilterIds(ids);
+    if (ids) setSelected(new Set(ids.map(Number)));
+    else { setSelected(new Set()); setPendingAction(null); }
   };
 
-  useEffect(() => {
-    if (aiResult?.selectedAll && aiResult?.target === "producers") {
-      setSelected(new Set(filtered.map(p => p.id)));
-    }
-  }, [filtered, aiResult]);
+  const handleAiAction = (_action: AIChatAction) => {
+    setSelected(new Set()); setAiFilterIds(null); setPendingAction(null);
+  };
 
   const handleTerminate = () => {
     setAllProducers(prev => prev.map(p => selected.has(p.id) ? { ...p, status: "Terminated" } : p));
-    setSelected(new Set()); setAiResult(null);
+    setSelected(new Set());
   };
+
+  const onSendMessage = (msg: string, addMessage: (m: AIChatMessage) => void, setLoading: (v: boolean) => void) => {
+    callClaude(msg).then(res => {
+      const f: Record<string, string[]> = {};
+      if (res.filters?.status?.length)         f.status         = res.filters.status;
+      if (res.filters?.classification?.length) f.classification = res.filters.classification;
+      if (res.filters?.resident?.length)       f.resident       = res.filters.resident;
+      if (Object.keys(f).length) setApplied(f);
+      const action: AIChatAction | null = res.action ? { type: res.action, value: res.action, label: res.actionLabel || res.action, ids: [] } : null;
+      addMessage({ role: "assistant", content: res.summary || "Done — results updated in the table.", action });
+    }).catch(() => {
+      addMessage({ role: "assistant", content: "Sorry, I couldn't process that. Try rephrasing." });
+    }).finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+  if (selCount > 0 && aiOpen) setAiOpen(false);
+}, [selCount]);
+
+  const showActionBar = isPlus && selCount > 0 && !aiOpen;
+  const bottomPad     = (aiOpen || showActionBar) ? 72 : 24;
 
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingBottom: bottomPad }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
@@ -242,9 +281,9 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
               </div>
               {inviteMenuOpen && (
                 <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.12)", zIndex: 30, minWidth: 170, overflow: "hidden" }}>
-                  <div onClick={() => { setInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>👤 Invite producer</div>
+                  <div onClick={() => { setInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>👤 Invite producer</div>
                   <div style={{ height: 1, background: C.border }} />
-                  <div onClick={() => { setBulkInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>📋 Bulk invite via CSV</div>
+                  <div onClick={() => { setBulkInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>📋 Bulk invite via CSV</div>
                 </div>
               )}
             </div>
@@ -253,16 +292,9 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
 
         {/* Search + filters */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <Input placeholder="Search by name or NPN…" value={search} onChange={setSearch} />
+          <SearchBar placeholder="Search by name or NPN…" value={search} onChange={setSearch} />
           <ActiveFilters filters={applied} onRemove={(k, v) => setApplied(prev => ({ ...prev, [k]: (prev[k] || []).filter(x => x !== v) }))} onClear={clearFilters} />
         </div>
-
-        {aiResult && (
-          <AIResultBanner result={aiResult} selectedCount={selected.size}
-            onConfirmAction={handleTerminate}
-            onSaveView={name => { onSaveView({ id: `pv${Date.now()}`, name, filters: applied, table: "producers" }); setAiResult(null); }}
-            onDismiss={() => setAiResult(null)} />
-        )}
 
         {/* Table */}
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
@@ -278,15 +310,40 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
               { key: "lastTask",       label: "Last Activity" },
             ]} rows={filtered} />
         </div>
-
-        {isPlus && <BulkBar selected={selected} onClear={() => setSelected(new Set())} actions={[
-          { label: "Assign Policy Set", onClick: () => setSelected(new Set()) },
-          { label: "Send Reminder",     onClick: () => setSelected(new Set()) },
-          { label: "Terminate", danger: true, onClick: handleTerminate },
-        ]} />}
-
-        {isAI && <AICommandBar tableType="producers" onResult={handleAIResult} onCollapse={() => setAiCollapsed(v => !v)} collapsed={aiCollapsed} />}
       </div>
+
+      {/* Bottom layer */}
+      {isAI && !aiOpen && (
+        <BottomBar
+          selCount={selCount}
+          showActions={showActionBar}
+          onAskAI={() => setAiOpen(true)}
+          onClear={() => setSelected(new Set())}
+          groups={[
+            { label: "", actions: [
+              { label: "Assign Policy Set", onClick: () => setSelected(new Set()) },
+              { label: "Send Reminder",     onClick: () => setSelected(new Set()) },
+              { label: "Terminate",         highlight: false, muted: false, onClick: handleTerminate },
+            ]},
+          ]}
+        />
+      )}
+
+      {isAI && (
+        <AIChat
+          open={aiOpen}
+          onToggle={() => setAiOpen(v => !v)}
+          onFilter={handleAiFilter}
+          onAction={handleAiAction}
+          filteredIds={aiFilterIds}
+          selectedIds={selCount}
+          pendingAiAction={pendingAction}
+          onClearPending={() => setPendingAction(null)}
+          prompts={AI_PROMPTS}
+          onSendMessage={onSendMessage}
+          placeholder="Ask anything about your producers…"
+        />
+      )}
 
       <FilterDrawer open={filterOpen} onClose={() => setFilterOpen(false)} filterDefs={PROD_FILTER_DEFS} pending={pending} setPending={setPending} onApply={f => setApplied(f)} onClear={clearFilters} />
       <InviteDrawer open={inviteOpen} onClose={() => setInviteOpen(false)} />

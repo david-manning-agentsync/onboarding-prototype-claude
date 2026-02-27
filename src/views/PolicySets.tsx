@@ -1,8 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { C } from "../theme";
 import { useVersion } from "../components/UI";
 import { PolicySetDrawer } from "../components/PolicySetDrawer";
 import type { PolicySetDrawerProps } from "../components/PolicySetDrawer";
+import { AIChat } from "../components/AIChat";
+import type { AIChatMessage, AIChatAction } from "../components/AIChat";
+import { BottomBar } from "../components/BottomBar";
+import { useTableSelection } from "../hooks/useTableSelection";
 type SavePayload = Parameters<PolicySetDrawerProps["onSave"]>[0];
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
@@ -30,7 +34,7 @@ const AI_PROMPTS = [
   "Show active policy sets with the most producers",
 ];
 
-const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const fmtDate  = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const monthsAgo = (d: string, n: number) => { const t = new Date(d), c = new Date(); c.setMonth(c.getMonth() - n); return t < c; };
 
 // ─── Badge ────────────────────────────────────────────────────────────────────
@@ -40,6 +44,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ─── Checkbox ─────────────────────────────────────────────────────────────────
+import { useRef, useEffect } from "react";
 function Checkbox({ checked, indeterminate, onChange }: { checked: boolean; indeterminate: boolean; onChange: () => void }) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate; }, [indeterminate]);
@@ -60,149 +65,44 @@ function Th({ children, sortKey, sortState, onSort }: { children: React.ReactNod
   );
 }
 
-// ─── AI Chat ──────────────────────────────────────────────────────────────────
-function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, pendingAiAction, onClearPending }: {
-  open: boolean; onToggle: () => void; onFilter: (ids: string[] | null) => void;
-  onAction: (a: any) => void; filteredIds: string[] | null;
-  selectedIds: number; pendingAiAction: any; onClearPending: () => void;
-}) {
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const prevOpen = useRef(open);
+// ─── AI message handler (PolicySets-specific logic) ───────────────────────────
+function usePolicySetsAI(onFilter: (ids: string[] | null) => void) {
+  return (msg: string, addMessage: (m: AIChatMessage) => void, setLoading: (v: boolean) => void) => {
+    setTimeout(async () => {
+      await new Promise(r => setTimeout(r, 850));
+      const lower = msg.toLowerCase();
+      let reply = "", action: AIChatAction | null = null;
 
-  useEffect(() => {
-    if (open && !prevOpen.current && selectedIds > 0) {
-      const content = pendingAiAction
-        ? `Welcome back — you have **${selectedIds} policy set${selectedIds !== 1 ? "s" : ""}** selected. Would you like to proceed with: **${pendingAiAction.label}**?`
-        : `Welcome back — you now have **${selectedIds} policy set${selectedIds !== 1 ? "s" : ""}** selected. What would you like to do with them?`;
-      const msg = { role: "assistant", content, action: pendingAiAction || null };
-      setMessages(prev => [...prev.filter(m => !m.content.startsWith("Welcome back")), msg]);
-    }
-    prevOpen.current = open;
-  }, [open, selectedIds, pendingAiAction]);
+      if (lower.includes("no active usage") || (lower.includes("not updated") && lower.includes("3 months"))) {
+        const ids = SEED.filter(s => s.activeInstances === 0 && monthsAgo(s.modifiedAt, 3)).map(s => s.id);
+        onFilter(ids);
+        reply = `Found **${ids.length} policy sets** with no active producers and no updates in over 3 months — I've selected them in the table:\n\n• Legacy P&C – Old Flow\n• 2023 Compliance Bundle\n\nWould you like to archive all of them?`;
+        action = { type: "status", value: "archived", label: `Archive ${ids.length} policy sets`, ids };
+      } else if (lower.includes("missing gwbr")) {
+        const ids = SEED.filter(s => s.gwbrs === 0).map(s => s.id);
+        onFilter(ids);
+        reply = `Found **${ids.length} policy sets** with no GWBRs configured. They're highlighted in the table.`;
+      } else if (lower.includes("draft") && lower.includes("2024")) {
+        const ids = SEED.filter(s => s.status === "draft" && new Date(s.createdAt) < new Date("2024-01-01")).map(s => s.id);
+        onFilter(ids);
+        reply = ids.length ? `Found **${ids.length} draft** policy sets created before 2024.` : "No draft policy sets found created before 2024.";
+      } else if (lower.includes("active") && lower.includes("most")) {
+        const sorted = [...SEED].filter(s => s.status === "active").sort((a, b) => b.activeInstances - a.activeInstances).slice(0, 3);
+        onFilter(sorted.map(s => s.id));
+        reply = `Top active policy sets by producer count:\n\n1. **Licensed P&C Producer** – 142\n2. **Life & Health Producer** – 89\n3. **Unlicensed – Needs Resident License** – 24`;
+      } else {
+        reply = `I searched your policy sets for "${msg}". Try one of the suggested prompts, or ask me to filter by usage, missing GWBRs, or status.`;
+      }
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  const sendMessage = async (text?: string) => {
-    const msg = text || input.trim();
-    if (!msg) return;
-    setInput("");
-    setMessages(prev => [...prev, { role: "user", content: msg }]);
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 850));
-
-    let reply = "", action = null;
-    const lower = msg.toLowerCase();
-
-    if (lower.includes("no active usage") || (lower.includes("not updated") && lower.includes("3 months"))) {
-      const ids = SEED.filter(s => s.activeInstances === 0 && monthsAgo(s.modifiedAt, 3)).map(s => s.id);
-      onFilter(ids);
-      reply = `Found **${ids.length} policy sets** with no active producers and no updates in over 3 months — I've selected them in the table:\n\n• Legacy P&C – Old Flow\n• 2023 Compliance Bundle\n\nWould you like to archive all of them?`;
-      action = { type: "status", value: "archived", label: `Archive ${ids.length} policy sets`, ids };
-    } else if (lower.includes("missing gwbr")) {
-      const ids = SEED.filter(s => s.gwbrs === 0).map(s => s.id);
-      onFilter(ids);
-      reply = `Found **${ids.length} policy sets** with no GWBRs configured. They're highlighted in the table.`;
-    } else if (lower.includes("draft") && lower.includes("2024")) {
-      const ids = SEED.filter(s => s.status === "draft" && new Date(s.createdAt) < new Date("2024-01-01")).map(s => s.id);
-      onFilter(ids);
-      reply = ids.length ? `Found **${ids.length} draft** policy sets created before 2024. Consider activating or archiving stale drafts.` : "No draft policy sets found created before 2024.";
-    } else if (lower.includes("active") && lower.includes("most")) {
-      const sorted = [...SEED].filter(s => s.status === "active").sort((a, b) => b.activeInstances - a.activeInstances).slice(0, 3);
-      onFilter(sorted.map(s => s.id));
-      reply = `Top active policy sets by producer count:\n\n1. **Licensed P&C Producer** – 142\n2. **Life & Health Producer** – 89\n3. **Unlicensed – Needs Resident License** – 24`;
-    } else {
-      reply = `I searched your policy sets for "${msg}". Try one of the suggested prompts, or ask me to filter by usage, missing GWBRs, or status.`;
-    }
-
-    setMessages(prev => [...prev, { role: "assistant", content: reply, action }]);
-    setLoading(false);
+      addMessage({ role: "assistant", content: reply, action });
+      setLoading(false);
+    }, 0);
   };
-
-  const executeAction = (action: any) => {
-    onAction(action);
-    onClearPending();
-    setMessages(prev => [...prev, { role: "assistant", content: `✓ Done — ${action.label} completed successfully.` }]);
-  };
-
-  if (!open) return null;
-
-  return (
-    <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: 520, zIndex: 50, display: "flex", flexDirection: "column", background: C.surface, borderRadius: "16px 16px 0 0", boxShadow: "0 -8px 40px rgba(0,0,0,0.18)", border: `1px solid ${C.aiBorder}`, borderBottom: "none", maxHeight: 460 }}>
-      <div onClick={onToggle} style={{ padding: "12px 18px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", borderBottom: `1px solid ${C.aiBorder}`, flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14, color: C.ai }}>✦</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.ai }}>AI Assistant</span>
-          {filteredIds && <span style={{ fontSize: 11, color: C.ai, background: C.aiBg, border: `1px solid ${C.aiBorder}`, borderRadius: 99, padding: "1px 8px" }}>Filter active</span>}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {filteredIds && (
-            <button onClick={e => { e.stopPropagation(); onFilter(null); }}
-              style={{ fontSize: 11, color: C.muted, background: "none", border: `1px solid ${C.border}`, borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>
-              Clear filter
-            </button>
-          )}
-          <span style={{ fontSize: 11, color: C.muted }}>▼ Collapse</span>
-        </div>
-      </div>
-
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {messages.length === 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.05em" }}>Try asking</div>
-            {AI_PROMPTS.map(p => (
-              <button key={p} onClick={() => sendMessage(p)}
-                style={{ textAlign: "left", fontSize: 12, color: C.ai, background: C.aiBg, border: `1px solid ${C.aiBorder}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer" }}>
-                {p}
-              </button>
-            ))}
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
-            <div style={{ maxWidth: "88%", fontSize: 13, lineHeight: 1.6, padding: "9px 13px", borderRadius: m.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px", background: m.role === "user" ? C.ai : C.aiBg, color: m.role === "user" ? "#fff" : C.text, border: m.role === "assistant" ? `1px solid ${C.aiBorder}` : "none" }}>
-              {m.content.split("\n").map((line: string, j: number, arr: string[]) => (
-                <span key={j}>{line.replace(/\*\*(.*?)\*\*/g, "$1")}{j < arr.length - 1 && <br />}</span>
-              ))}
-            </div>
-            {m.action && (
-              <button onClick={() => executeAction(m.action)}
-                style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: C.ai, border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
-                ✦ {m.action.label}
-              </button>
-            )}
-          </div>
-        ))}
-        {loading && (
-          <div style={{ display: "flex", gap: 4, padding: "8px 12px", background: C.aiBg, borderRadius: 12, width: "fit-content", border: `1px solid ${C.aiBorder}` }}>
-            {[0,1,2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: C.ai, animation: `bounce 1s ease-in-out ${i*0.2}s infinite` }} />)}
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      <div style={{ padding: "10px 14px 14px", flexShrink: 0, borderTop: `1px solid ${C.aiBorder}` }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <textarea value={input} onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}
-            placeholder="Ask anything about your policy sets…" rows={1}
-            style={{ flex: 1, resize: "none", border: `1px solid ${C.aiBorder}`, borderRadius: 10, padding: "9px 12px", fontSize: 13, color: C.text, outline: "none", fontFamily: "inherit", background: C.aiBg }} />
-          <button onClick={() => sendMessage()} disabled={!input.trim() || loading}
-            style={{ padding: "9px 14px", background: input.trim() && !loading ? C.ai : C.muted, color: "#fff", border: "none", borderRadius: 10, cursor: input.trim() && !loading ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 600 }}>
-            ↑
-          </button>
-        </div>
-      </div>
-      <style>{`@keyframes bounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}`}</style>
-    </div>
-  );
 }
 
 // ─── Main View ────────────────────────────────────────────────────────────────
 export function PolicySets() {
-  const version = useVersion();
+  const version   = useVersion();
   const isAI      = version === "ai";
   const isPostMVP = version === "post-mvp" || isAI;
 
@@ -210,11 +110,10 @@ export function PolicySets() {
   const [search,          setSearch]          = useState("");
   const [statusFilter,    setStatusFilter]    = useState("all");
   const [orgFilter,       setOrgFilter]       = useState("all");
-  const [selected,        setSelected]        = useState<Set<string>>(new Set());
   const [sort,            setSort]            = useState({ key: "name", dir: "asc" });
   const [aiOpen,          setAiOpen]          = useState(isAI);
   const [aiFilterIds,     setAiFilterIds]     = useState<string[] | null>(null);
-  const [pendingAiAction, setPendingAiAction] = useState<any>(null);
+  const [pendingAiAction, setPendingAiAction] = useState<AIChatAction | null>(null);
   const [showDrawer,      setShowDrawer]      = useState(false);
 
   const handleSort = (k: string) => setSort(prev => ({ key: k, dir: prev.key === k && prev.dir === "asc" ? "desc" : "asc" }));
@@ -234,45 +133,39 @@ export function PolicySets() {
     return sort.dir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
   });
 
-  const allSelected = rows.length > 0 && rows.every(r => selected.has(r.id));
-  const someSelected = rows.some(r => selected.has(r.id));
-  const selCount = [...selected].filter(id => rows.find(r => r.id === id)).length;
-
-  const toggleAll = () => {
-    if (allSelected) setSelected(prev => { const n = new Set(prev); rows.forEach(r => n.delete(r.id)); return n; });
-    else setSelected(prev => { const n = new Set(prev); rows.forEach(r => n.add(r.id)); return n; });
-  };
-  const toggleRow = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const { selected, toggleRow, toggleAll, selCount, allSelected, someSelected, setFromIds, clear } = useTableSelection(rows);
 
   const handleAiFilter = (ids: string[] | null) => {
     setAiFilterIds(ids);
-    if (ids) setSelected(new Set(ids));
-    else { setSelected(new Set()); setPendingAiAction(null); }
+    if (ids) setFromIds(ids);
+    else { clear(); setPendingAiAction(null); }
   };
 
-  const handleAiAction = ({ type, value, ids }: { type: string; value: any; ids: string[] }) => {
+  const handleAiAction = ({ type, value, ids }: AIChatAction) => {
     setData(prev => prev.map(r => ids.includes(r.id) ? { ...r, [type]: value } : r));
-    setSelected(new Set());
-    setAiFilterIds(null);
-    setPendingAiAction(null);
+    clear(); setAiFilterIds(null); setPendingAiAction(null);
   };
 
   const handleBulkStatus = (status: string) => {
     const ids = [...selected].filter(id => rows.find(r => r.id === id));
     setData(prev => prev.map(r => ids.includes(r.id) ? { ...r, status } : r));
-    setSelected(new Set());
-    setPendingAiAction(null);
+    clear(); setPendingAiAction(null);
   };
 
   const handleBulkOrgRequired = (val: boolean) => {
     const ids = [...selected].filter(id => rows.find(r => r.id === id));
     setData(prev => prev.map(r => ids.includes(r.id) ? { ...r, orgRequired: val } : r));
-    setSelected(new Set());
-    setPendingAiAction(null);
+    clear(); setPendingAiAction(null);
   };
 
+  const onSendMessage = usePolicySetsAI(handleAiFilter);
+  
+  useEffect(() => {
+  if (selCount > 0 && aiOpen) setAiOpen(false);
+}, [selCount]);
+
   const showActionBar = isPostMVP && selCount > 0 && !aiOpen;
-  const bottomPad = (aiOpen || showActionBar) ? 72 : 24;
+  const bottomPad     = (aiOpen || showActionBar) ? 72 : 24;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, paddingBottom: bottomPad }}>
@@ -367,9 +260,7 @@ export function PolicySets() {
                     <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center" }}>
                       {r.orgRequired ? <span style={{ fontSize: 12, color: C.success }}>✓ Yes</span> : <span style={{ fontSize: 12, color: C.muted }}>—</span>}
                     </td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.activeInstances > 0 ? C.text : C.muted, fontWeight: r.activeInstances > 0 ? 600 : 400 }}>
-                      {r.activeInstances || "0"}
-                    </td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.activeInstances > 0 ? C.text : C.muted, fontWeight: r.activeInstances > 0 ? 600 : 400 }}>{r.activeInstances || "0"}</td>
                     <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: C.textMed }}>{r.orgReqs}</td>
                     <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.gwbrs > 0 ? C.textMed : C.muted }}>{r.gwbrs || "—"}</td>
                     <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}><StatusBadge status={r.status} /></td>
@@ -391,74 +282,28 @@ export function PolicySets() {
         </div>
       </div>
 
-      {/* PolicySetDrawer */}
-      <PolicySetDrawer
-        open={showDrawer}
-        onClose={() => setShowDrawer(false)}
-        isPlus={isPostMVP}
+      {/* Drawer */}
+      <PolicySetDrawer open={showDrawer} onClose={() => setShowDrawer(false)} isPlus={isPostMVP}
         onSave={({ name, gwbrIds, tasks }: SavePayload) => {
-          const id = `ps-${Date.now()}`;
-          setData(prev => [...prev, {
-            id,
-            name,
-            orgRequired: false,
-            activeInstances: 0,
-            orgReqs: tasks.length,
-            gwbrs: gwbrIds.length,
-            status: "draft",
-            createdBy: "You",
-            createdAt: new Date().toISOString().split("T")[0],
-            modifiedBy: "You",
-            modifiedAt: new Date().toISOString().split("T")[0],
-          }]);
+          setData(prev => [...prev, { id: `ps-${Date.now()}`, name, orgRequired: false, activeInstances: 0, orgReqs: tasks.length, gwbrs: gwbrIds.length, status: "draft", createdBy: "You", createdAt: new Date().toISOString().split("T")[0], modifiedBy: "You", modifiedAt: new Date().toISOString().split("T")[0] }]);
           setShowDrawer(false);
-        }}
-      />
+        }} />
 
-      {/* ── Fixed bottom layer ── */}
+      {/* Bottom layer */}
       {isAI && !aiOpen && (
-        <div style={{
-          position: "fixed", bottom: 0,
-          ...(showActionBar
-            ? { left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 1200 }
-            : { left: "50%", transform: "translateX(-50%)", width: "auto" }
-          ),
-          display: "flex", alignItems: "stretch",
-          zIndex: 40, borderRadius: "12px 12px 0 0", overflow: "hidden",
-          boxShadow: "0 -4px 24px rgba(0,0,0,0.2)",
-        }}>
-          <button onClick={() => setAiOpen(true)}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 20px", background: "#5b21b6", color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, flexShrink: 0, borderRight: showActionBar ? "1px solid #7c3aed" : "none", borderRadius: "12px 12px 0 0" }}>
-            <span style={{ fontSize: 14 }}>✦</span> Ask AI
-          </button>
-
-          {showActionBar && (
-            <div style={{ flex: 1, background: "#111827", padding: "0 20px", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#fff", flexShrink: 0 }}>{selCount} selected</span>
-              <div style={{ width: 1, height: 18, background: "#374151", flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0 }}>Status:</span>
-              {["active", "draft", "archived"].map(s => (
-                <button key={s} onClick={() => handleBulkStatus(s)}
-                  style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#1f2937", border: "1px solid #374151", borderRadius: 7, padding: "5px 10px", cursor: "pointer", textTransform: "capitalize", flexShrink: 0 }}>
-                  {s}
-                </button>
-              ))}
-              <div style={{ width: 1, height: 18, background: "#374151", flexShrink: 0 }} />
-              <button onClick={() => handleBulkOrgRequired(true)}
-                style={{ fontSize: 12, fontWeight: 600, color: "#86efac", background: "#052e16", border: "1px solid #166534", borderRadius: 7, padding: "5px 10px", cursor: "pointer", flexShrink: 0 }}>
-                Set Org Required
-              </button>
-              <button onClick={() => handleBulkOrgRequired(false)}
-                style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", background: "#1f2937", border: "1px solid #374151", borderRadius: 7, padding: "5px 10px", cursor: "pointer", flexShrink: 0 }}>
-                Remove
-              </button>
-              <button onClick={() => setSelected(new Set())}
-                style={{ fontSize: 12, color: "#6b7280", background: "none", border: "none", cursor: "pointer", marginLeft: "auto", flexShrink: 0 }}>
-                ✕ Clear
-              </button>
-            </div>
-          )}
-        </div>
+        <BottomBar
+          selCount={selCount}
+          showActions={showActionBar}
+          onAskAI={() => setAiOpen(true)}
+          onClear={clear}
+          groups={[
+            { label: "Status", actions: ["active", "draft", "archived"].map(s => ({ label: s, onClick: () => handleBulkStatus(s) })) },
+            { label: "",       actions: [
+              { label: "Set Org Required", highlight: true, onClick: () => handleBulkOrgRequired(true) },
+              { label: "Remove",           muted: true,     onClick: () => handleBulkOrgRequired(false) },
+            ]},
+          ]}
+        />
       )}
 
       {isAI && (
@@ -471,6 +316,9 @@ export function PolicySets() {
           selectedIds={selCount}
           pendingAiAction={pendingAiAction}
           onClearPending={() => setPendingAiAction(null)}
+          prompts={AI_PROMPTS}
+          onSendMessage={onSendMessage}
+          placeholder="Ask anything about your policy sets…"
         />
       )}
     </div>
