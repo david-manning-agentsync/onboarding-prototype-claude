@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { C } from "./theme";
-import { PRODUCERS_SEED, DEFAULT_PRODUCER_VIEWS, DEFAULT_TASK_VIEWS } from "./data"
+import { PRODUCERS_SEED, DEFAULT_PRODUCER_VIEWS, DEFAULT_TASK_VIEWS } from "./data";
 import type { Producer, SavedView } from "./data";
 import { VersionCtx } from "./components/UI";
 import { Dashboard } from "./views/Dashboard";
@@ -8,19 +8,97 @@ import { ProducersView, ProducerDetail } from "./views/Producers";
 import { TasksView } from "./views/Tasks";
 import { PolicySets } from "./views/PolicySets";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const BASE_NAV = [
-  { id: "dashboard",   label: "Dashboard",   icon: "▣" },
-  { id: "producers",   label: "Producers",   icon: "👤" },
-  { id: "tasks",       label: "Tasks",        icon: "✓" },
-  { id: "policy-sets", label: "Policy Sets",  icon: "⚙" },
+// ─── Personas ─────────────────────────────────────────────────────────────────
+const PERSONAS = [
+  { id: "manager",  name: "Sarah Chen",   role: "Operating Manager", initials: "SC", color: C.accent },
+  { id: "admin",    name: "Alex Morgan",  role: "System Admin",      initials: "AM", color: "#0891b2" },
+  { id: "producer", name: "Jordan Smith", role: "Producer",          initials: "JS", color: "#7c3aed" },
 ];
 
-const VERSION_META: Record<string, { label: string; color: string }> = {
-  mvp:       { label: "MVP",        color: C.success },
-  "post-mvp":{ label: "Post-MVP",   color: C.accent },
-  ai:        { label: "AI Preview", color: C.ai },
+// Nav items per persona
+const NAV_BY_PERSONA: Record<string, { id: string; label: string; icon: string }[]> = {
+  manager: [
+    { id: "dashboard",   label: "Dashboard",   icon: "▣" },
+    { id: "producers",   label: "Producers",   icon: "👤" },
+    { id: "tasks",       label: "Tasks",       icon: "✓" },
+    { id: "policy-sets", label: "Policy Sets", icon: "⚙" },
+  ],
+  admin: [
+    { id: "dashboard",   label: "Dashboard",   icon: "▣" },
+    { id: "producers",   label: "Producers",   icon: "👤" },
+    { id: "tasks",       label: "Tasks",       icon: "✓" },
+    { id: "policy-sets", label: "Policy Sets", icon: "⚙" },
+    { id: "users",       label: "Users",       icon: "⊞" },
+  ],
+  producer: [
+    { id: "profile",     label: "Profile",     icon: "👤" },
+    { id: "tasks",       label: "Tasks",       icon: "✓" },
+  ],
 };
+
+const VERSION_META: Record<string, { label: string; color: string }> = {
+  mvp:        { label: "MVP",        color: C.success },
+  "post-mvp": { label: "Post-MVP",   color: C.accent },
+  ai:         { label: "AI Preview", color: C.ai },
+};
+
+// ─── Persona Switcher ─────────────────────────────────────────────────────────
+function PersonaSwitcher({ activeId, onChange }: {
+  activeId: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = PERSONAS.find(p => p.id === activeId)!;
+
+  return (
+    <div style={{ padding: "12px 12px 14px", borderTop: `1px solid ${C.border}`, flexShrink: 0, position: "relative" }}>
+      {/* Flyup panel */}
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 12, right: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 -4px 24px rgba(0,0,0,0.1)", zIndex: 50, overflow: "hidden" }}>
+            <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Switch Persona</div>
+            </div>
+            {PERSONAS.map(p => {
+              const isActive = p.id === activeId;
+              return (
+                <div key={p.id} onClick={() => { onChange(p.id); setOpen(false); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: "pointer", background: isActive ? C.accentBg : "transparent", transition: "background .1s" }}
+                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = C.bg; }}
+                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: isActive ? p.color : C.bg, border: `1.5px solid ${isActive ? p.color : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: isActive ? "#fff" : C.muted, flexShrink: 0, transition: "all .15s" }}>
+                    {p.initials}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 500, color: isActive ? C.text : C.textMed, lineHeight: 1.3 }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{p.role}</div>
+                  </div>
+                  {isActive && <div style={{ width: 6, height: 6, borderRadius: "50%", background: p.color, flexShrink: 0 }} />}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Trigger */}
+      <button onClick={() => setOpen(v => !v)}
+        style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: open ? C.bg : "transparent", border: `1px solid ${open ? C.border : "transparent"}`, borderRadius: 8, padding: "7px 8px", cursor: "pointer", transition: "all .15s" }}
+        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = C.bg; }}
+        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: active.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+          {active.initials}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.text, lineHeight: 1.3 }}>{active.name}</div>
+          <div style={{ fontSize: 11, color: C.muted }}>{active.role}</div>
+        </div>
+        <span style={{ fontSize: 10, color: C.muted, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▲</span>
+      </button>
+    </div>
+  );
+}
 
 // ─── Launcher ─────────────────────────────────────────────────────────────────
 function Launcher({ onSelect }: { onSelect: (v: string) => void }) {
@@ -85,10 +163,22 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
   const [detailState,  setDetailState]  = useState<{ producer: Producer } | null>(null);
   const [allProducers, setAllProducers] = useState<Producer[]>(PRODUCERS_SEED);
   const [savedViews,   setSavedViews]   = useState<SavedView[]>([...DEFAULT_PRODUCER_VIEWS, ...DEFAULT_TASK_VIEWS]);
-  const vm     = VERSION_META[version];
-  const isPlus = version === "post-mvp" || version === "ai";
+  const [personaId,    setPersonaId]    = useState("manager");
+
+  const vm      = VERSION_META[version];
+  const isPlus  = version === "post-mvp" || version === "ai";
+  const navItems = NAV_BY_PERSONA[personaId];
 
   const navTo = (id: string, f?: Record<string, string[]>) => { setNav(id); setFilter(f || {}); setDetailState(null); };
+
+  // When persona changes, reset to first nav item for that persona
+  const handlePersonaChange = (id: string) => {
+    setPersonaId(id);
+    setNav(NAV_BY_PERSONA[id][0].id);
+    setFilter({});
+    setDetailState(null);
+  };
+
   const prodViews = savedViews.filter(v => v.table === "producers");
   const taskViews = savedViews.filter(v => v.table === "tasks");
   const handleSaveView   = (v: SavedView) => setSavedViews(prev => [...prev, v]);
@@ -100,6 +190,8 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
 
         {/* Sidebar */}
         <div style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0, overflowY: "auto" }}>
+
+          {/* Logo + version badge */}
           <div style={{ padding: "16px 18px 12px", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <div style={{ width: 30, height: 30, borderRadius: 8, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff" }}>A</div>
@@ -111,8 +203,9 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
             </button>
           </div>
 
+          {/* Nav items */}
           <div style={{ padding: "0 8px", flex: 1 }}>
-            {BASE_NAV.map(n => {
+            {navItems.map(n => {
               const isActive = nav === n.id && !detailState && Object.keys(filter).length === 0;
               return (
                 <div key={n.id} onClick={() => navTo(n.id)}
@@ -122,10 +215,10 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
               );
             })}
 
-            {isPlus && (prodViews.length > 0 || taskViews.length > 0) && (
+            {/* Saved views — only for manager/admin */}
+            {isPlus && personaId !== "producer" && (prodViews.length > 0 || taskViews.length > 0) && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em", padding: "0 10px", marginBottom: 6 }}>Saved Views</div>
-
                 {prodViews.length > 0 && (
                   <>
                     <div style={{ fontSize: 10, color: C.muted, padding: "4px 10px 2px", letterSpacing: "0.04em" }}>Producers</div>
@@ -144,7 +237,6 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
                     })}
                   </>
                 )}
-
                 {taskViews.length > 0 && (
                   <>
                     <div style={{ fontSize: 10, color: C.muted, padding: "8px 10px 2px", letterSpacing: "0.04em" }}>Tasks</div>
@@ -167,10 +259,8 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
             )}
           </div>
 
-          <div style={{ padding: 16, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-            <div style={{ fontSize: 11, color: C.muted }}>Operating Manager</div>
-            <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginTop: 2 }}>Sarah Chen</div>
-          </div>
+          {/* Persona switcher */}
+          <PersonaSwitcher activeId={personaId} onChange={handlePersonaChange} />
         </div>
 
         {/* Main content */}
@@ -181,8 +271,38 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
             <>
               {nav === "dashboard"   && <Dashboard setNav={id => navTo(id)} setFilter={f => navTo("producers", f)} producers={allProducers} />}
               {nav === "producers"   && <ProducersView initFilter={filter} setDetailState={s => setDetailState(s)} producers={allProducers} setAllProducers={setAllProducers} onSaveView={handleSaveView} />}
-              {nav === "tasks"       && <TasksView producers={allProducers} setAllProducers={setAllProducers} initFilter={filter} onSaveView={handleSaveView} />}
+              {nav === "tasks" && personaId !== "producer" && <TasksView producers={allProducers} setAllProducers={setAllProducers} initFilter={filter} onSaveView={handleSaveView} />}
               {nav === "policy-sets" && <PolicySets />}
+              {nav === "users"       && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  <div><h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Users</h2><p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Manage system users and permissions</p></div>
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 40, textAlign: "center" }}>
+                    <div style={{ fontSize: 32, marginBottom: 12 }}>⊞</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 }}>User management coming soon</div>
+                    <div style={{ fontSize: 13, color: C.muted }}>This section will allow admins to manage roles and permissions.</div>
+                  </div>
+                </div>
+              )}
+              {nav === "profile"     && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  <div><h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Profile</h2><p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Manage your profile and preferences</p></div>
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 40, textAlign: "center" }}>
+                    <div style={{ fontSize: 32, marginBottom: 12 }}>👤</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 }}>Profile management coming soon</div>
+                    <div style={{ fontSize: 13, color: C.muted }}>This section will allow you to view and update your profile information.</div>
+                  </div>
+                </div>
+              )}
+              {nav === "tasks" && personaId === "producer" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  <div><h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Tasks</h2><p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>View and manage your onboarding tasks</p></div>
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 40, textAlign: "center" }}>
+                    <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 }}>Tasks view coming soon</div>
+                    <div style={{ fontSize: 13, color: C.muted }}>This section will display your assigned onboarding tasks.</div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
