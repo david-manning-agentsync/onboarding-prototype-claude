@@ -6,7 +6,7 @@ import { VersionCtx } from "./components/UI";
 import { Dashboard } from "./views/Dashboard";
 import { ProducersView, ProducerDetail } from "./views/Producers";
 import { TasksView } from "./views/Tasks";
-import { PolicySets } from "./views/PolicySets";
+import { PolicySets as PolicySetsView } from "./views/PolicySets";
 
 // ─── Personas ─────────────────────────────────────────────────────────────────
 const PERSONAS = [
@@ -272,7 +272,7 @@ function App({ version, onExit }: { version: string; onExit: () => void }) {
               {nav === "dashboard"   && <Dashboard setNav={id => navTo(id)} setFilter={f => navTo("producers", f)} producers={allProducers} />}
               {nav === "producers"   && <ProducersView initFilter={filter} setDetailState={s => setDetailState(s)} producers={allProducers} setAllProducers={setAllProducers} onSaveView={handleSaveView} />}
               {nav === "tasks" && personaId !== "producer" && <TasksView producers={allProducers} setAllProducers={setAllProducers} initFilter={filter} onSaveView={handleSaveView} />}
-              {nav === "policy-sets" && <PolicySets />}
+              {nav === "policy-sets" && <PolicySetsView />}
               {nav === "users"       && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                   <div><h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Users</h2><p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Manage system users and permissions</p></div>

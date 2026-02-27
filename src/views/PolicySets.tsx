@@ -1,14 +1,9 @@
 import { useState, useRef, useEffect } from "react";
+import { C } from "../theme";
+import { useVersion } from "../components/UI";
+import { PolicySetDrawer } from "../components/PolicySetDrawer";
 
-const C = {
-  bg: "#f8f9fb", surface: "#ffffff", border: "#e5e7eb", borderLight: "#f3f4f6",
-  text: "#111827", textMed: "#374151", textDim: "#6b7280", muted: "#9ca3af",
-  accent: "#4f46e5", accentBg: "#eef2ff", accentLight: "#6366f1",
-  ai: "#7c3aed", aiBg: "#f5f3ff", aiBorder: "#ddd6fe",
-  success: "#16a34a", danger: "#dc2626",
-  rowHover: "#f9fafb",
-};
-
+// ─── Seed Data ────────────────────────────────────────────────────────────────
 const SEED = [
   { id: "ps-1", name: "Licensed P&C Producer",               orgRequired: true,  activeInstances: 142, orgReqs: 6, gwbrs: 3, status: "active",   createdBy: "Maria Chen",   createdAt: "2024-01-12", modifiedBy: "Maria Chen",   modifiedAt: "2024-11-03" },
   { id: "ps-2", name: "Life & Health Producer",              orgRequired: true,  activeInstances: 89,  orgReqs: 7, gwbrs: 2, status: "active",   createdBy: "James Park",   createdAt: "2024-02-08", modifiedBy: "Sara Okonkwo", modifiedAt: "2025-01-15" },
@@ -33,21 +28,24 @@ const AI_PROMPTS = [
   "Show active policy sets with the most producers",
 ];
 
-const fmtDate = d => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-const monthsAgo = (d, n) => { const t = new Date(d), c = new Date(); c.setMonth(c.getMonth() - n); return t < c; };
+const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const monthsAgo = (d: string, n: number) => { const t = new Date(d), c = new Date(); c.setMonth(c.getMonth() - n); return t < c; };
 
-function Badge({ status }) {
-  const s = STATUS_COLORS[status];
+// ─── Badge ────────────────────────────────────────────────────────────────────
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS_COLORS[status as keyof typeof STATUS_COLORS];
   return <span style={{ fontSize: 11, fontWeight: 600, color: s.color, background: s.bg, border: `1px solid ${s.border}`, borderRadius: 99, padding: "2px 8px", textTransform: "capitalize" }}>{status}</span>;
 }
 
-function Checkbox({ checked, indeterminate, onChange }) {
-  const ref = useRef();
+// ─── Checkbox ─────────────────────────────────────────────────────────────────
+function Checkbox({ checked, indeterminate, onChange }: { checked: boolean; indeterminate: boolean; onChange: () => void }) {
+  const ref = useRef<HTMLInputElement>(null);
   useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate; }, [indeterminate]);
   return <input ref={ref} type="checkbox" checked={checked} onChange={onChange} style={{ cursor: "pointer", width: 15, height: 15, accentColor: C.accent }} />;
 }
 
-function Th({ children, sortKey, sortState, onSort }) {
+// ─── Table Header Cell ────────────────────────────────────────────────────────
+function Th({ children, sortKey, sortState, onSort }: { children: React.ReactNode; sortKey?: string; sortState: { key: string; dir: string }; onSort: (k: string) => void }) {
   const active = sortState?.key === sortKey;
   return (
     <th onClick={() => sortKey && onSort(sortKey)}
@@ -60,109 +58,32 @@ function Th({ children, sortKey, sortState, onSort }) {
   );
 }
 
-// ─── Bottom Bar ───────────────────────────────────────────────────────────────
-// Shared fixed bar at the bottom. When action bar only: full centered width.
-// When both coexist: action bar takes right portion, Ask AI button left-anchored.
-function BottomBar({ selCount, showAction, aiOpen, onAiToggle, onStatus, onOrgRequired, onClear, hasSelection }) {
-  // We always render this when isAI. It manages both the AI button/chat trigger and the action bar.
-  const showAskAI = !aiOpen;
-  const compact = showAskAI && showAction; // both visible simultaneously
-
-  if (!showAction && !showAskAI) return null;
-
-  return (
-    <div style={{
-      position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
-      width: "100%", maxWidth: 1200,
-      display: "flex", alignItems: "stretch",
-      zIndex: 40, borderRadius: "12px 12px 0 0", overflow: "hidden",
-      boxShadow: "0 -4px 24px rgba(0,0,0,0.18)",
-    }}>
-      {/* Ask AI button — left-anchored when action bar is also showing */}
-      {showAskAI && (
-        <button onClick={onAiToggle}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: compact ? "14px 20px" : "14px 28px",
-            background: "#5b21b6", color: "#fff", border: "none",
-            cursor: "pointer", fontSize: 13, fontWeight: 600,
-            borderRadius: compact ? 0 : "12px 12px 0 0",
-            flexShrink: 0,
-            borderRight: compact ? "1px solid #7c3aed" : "none",
-          }}>
-          <span style={{ fontSize: 14 }}>✦</span>
-          {!compact && "Ask AI"}
-          {compact && "Ask AI"}
-        </button>
-      )}
-
-      {/* Action bar */}
-      {showAction && (
-        <div style={{
-          flex: 1, background: "#111827",
-          padding: "14px 20px", display: "flex", alignItems: "center", gap: 10,
-          minWidth: 0,
-        }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#fff", flexShrink: 0 }}>{selCount} selected</span>
-          <div style={{ width: 1, height: 18, background: "#374151", flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0 }}>Status:</span>
-          {["active", "draft", "archived"].map(s => (
-            <button key={s} onClick={() => onStatus(s)}
-              style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#1f2937", border: "1px solid #374151", borderRadius: 7, padding: "5px 10px", cursor: "pointer", textTransform: "capitalize", flexShrink: 0 }}>
-              {s}
-            </button>
-          ))}
-          <div style={{ width: 1, height: 18, background: "#374151", flexShrink: 0 }} />
-          <button onClick={() => onOrgRequired(true)}
-            style={{ fontSize: 12, fontWeight: 600, color: "#86efac", background: "#052e16", border: "1px solid #166534", borderRadius: 7, padding: "5px 10px", cursor: "pointer", flexShrink: 0 }}>
-            Set Org Required
-          </button>
-          <button onClick={() => onOrgRequired(false)}
-            style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", background: "#1f2937", border: "1px solid #374151", borderRadius: 7, padding: "5px 10px", cursor: "pointer", flexShrink: 0 }}>
-            Remove
-          </button>
-          <button onClick={onClear}
-            style={{ fontSize: 12, color: "#6b7280", background: "none", border: "none", cursor: "pointer", marginLeft: "auto", flexShrink: 0 }}>
-            ✕ Clear
-          </button>
-        </div>
-      )}
-
-      {/* When action bar only (no Ask AI button), fill with centered dark bar */}
-      {showAction && !showAskAI && (
-        <div style={{ display: "none" }} /> // handled above
-      )}
-    </div>
-  );
-}
-
-// ─── AI Chat Panel ────────────────────────────────────────────────────────────
-function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, pendingAiAction, onClearPending }) {
+// ─── AI Chat ──────────────────────────────────────────────────────────────────
+function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, pendingAiAction, onClearPending }: {
+  open: boolean; onToggle: () => void; onFilter: (ids: string[] | null) => void;
+  onAction: (a: any) => void; filteredIds: string[] | null;
+  selectedIds: number; pendingAiAction: any; onClearPending: () => void;
+}) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const bottomRef = useRef();
+  const bottomRef = useRef<HTMLDivElement>(null);
   const prevOpen = useRef(open);
 
-  // When reopening with selections, inject a context message
   useEffect(() => {
     if (open && !prevOpen.current && selectedIds > 0) {
       const content = pendingAiAction
         ? `Welcome back — you have **${selectedIds} policy set${selectedIds !== 1 ? "s" : ""}** selected. Would you like to proceed with: **${pendingAiAction.label}**?`
         : `Welcome back — you now have **${selectedIds} policy set${selectedIds !== 1 ? "s" : ""}** selected. What would you like to do with them?`;
       const msg = { role: "assistant", content, action: pendingAiAction || null };
-      setMessages(prev => {
-        // Replace a previous "welcome back" message if it exists, otherwise append
-        const withoutPrev = prev.filter(m => !m.content.startsWith("Welcome back"));
-        return [...withoutPrev, msg];
-      });
+      setMessages(prev => [...prev.filter(m => !m.content.startsWith("Welcome back")), msg]);
     }
     prevOpen.current = open;
   }, [open, selectedIds, pendingAiAction]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const sendMessage = async (text) => {
+  const sendMessage = async (text?: string) => {
     const msg = text || input.trim();
     if (!msg) return;
     setInput("");
@@ -198,7 +119,7 @@ function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, 
     setLoading(false);
   };
 
-  const executeAction = (action) => {
+  const executeAction = (action: any) => {
     onAction(action);
     onClearPending();
     setMessages(prev => [...prev, { role: "assistant", content: `✓ Done — ${action.label} completed successfully.` }]);
@@ -208,7 +129,6 @@ function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, 
 
   return (
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: 520, zIndex: 50, display: "flex", flexDirection: "column", background: C.surface, borderRadius: "16px 16px 0 0", boxShadow: "0 -8px 40px rgba(0,0,0,0.18)", border: `1px solid ${C.aiBorder}`, borderBottom: "none", maxHeight: 460 }}>
-      {/* Header */}
       <div onClick={onToggle} style={{ padding: "12px 18px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", borderBottom: `1px solid ${C.aiBorder}`, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 14, color: C.ai }}>✦</span>
@@ -226,7 +146,6 @@ function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, 
         </div>
       </div>
 
-      {/* Messages */}
       <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
         {messages.length === 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -242,7 +161,7 @@ function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, 
         {messages.map((m, i) => (
           <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
             <div style={{ maxWidth: "88%", fontSize: 13, lineHeight: 1.6, padding: "9px 13px", borderRadius: m.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px", background: m.role === "user" ? C.ai : C.aiBg, color: m.role === "user" ? "#fff" : C.text, border: m.role === "assistant" ? `1px solid ${C.aiBorder}` : "none" }}>
-              {m.content.split("\n").map((line, j, arr) => (
+              {m.content.split("\n").map((line: string, j: number, arr: string[]) => (
                 <span key={j}>{line.replace(/\*\*(.*?)\*\*/g, "$1")}{j < arr.length - 1 && <br />}</span>
               ))}
             </div>
@@ -262,7 +181,6 @@ function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, 
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div style={{ padding: "10px 14px 14px", flexShrink: 0, borderTop: `1px solid ${C.aiBorder}` }}>
         <div style={{ display: "flex", gap: 8 }}>
           <textarea value={input} onChange={e => setInput(e.target.value)}
@@ -280,23 +198,24 @@ function AIChat({ open, onToggle, onFilter, onAction, filteredIds, selectedIds, 
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-export default function PolicySets() {
-  const isAI = true;
-  const isPostMVP = true;
+// ─── Main View ────────────────────────────────────────────────────────────────
+export function PolicySets() {
+  const version = useVersion();
+  const isAI      = version === "ai";
+  const isPostMVP = version === "post-mvp" || isAI;
 
-  const [data, setData] = useState(SEED);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [orgFilter, setOrgFilter] = useState("all");
-  const [selected, setSelected] = useState(new Set());
-  const [sort, setSort] = useState({ key: "name", dir: "asc" });
-  const [aiOpen, setAiOpen] = useState(true);
-  const [aiFilterIds, setAiFilterIds] = useState(null);
-  // Tracks the last AI-suggested action so we can resume it if user reopens chat
-  const [pendingAiAction, setPendingAiAction] = useState(null);
+  const [data,            setData]            = useState(SEED);
+  const [search,          setSearch]          = useState("");
+  const [statusFilter,    setStatusFilter]    = useState("all");
+  const [orgFilter,       setOrgFilter]       = useState("all");
+  const [selected,        setSelected]        = useState<Set<string>>(new Set());
+  const [sort,            setSort]            = useState({ key: "name", dir: "asc" });
+  const [aiOpen,          setAiOpen]          = useState(isAI);
+  const [aiFilterIds,     setAiFilterIds]     = useState<string[] | null>(null);
+  const [pendingAiAction, setPendingAiAction] = useState<any>(null);
+  const [showDrawer,      setShowDrawer]      = useState(false);
 
-  const handleSort = k => setSort(prev => ({ key: k, dir: prev.key === k && prev.dir === "asc" ? "desc" : "asc" }));
+  const handleSort = (k: string) => setSort(prev => ({ key: k, dir: prev.key === k && prev.dir === "asc" ? "desc" : "asc" }));
 
   let rows = data.filter(r => {
     if (aiFilterIds && !aiFilterIds.includes(r.id)) return false;
@@ -306,7 +225,7 @@ export default function PolicySets() {
     if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  rows = [...rows].sort((a, b) => {
+  rows = [...rows].sort((a: any, b: any) => {
     let av = a[sort.key], bv = b[sort.key];
     if (typeof av === "boolean") { av = av ? 1 : 0; bv = bv ? 1 : 0; }
     if (typeof av === "number") return sort.dir === "asc" ? av - bv : bv - av;
@@ -321,32 +240,29 @@ export default function PolicySets() {
     if (allSelected) setSelected(prev => { const n = new Set(prev); rows.forEach(r => n.delete(r.id)); return n; });
     else setSelected(prev => { const n = new Set(prev); rows.forEach(r => n.add(r.id)); return n; });
   };
-  const toggleRow = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleRow = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const handleAiFilter = ids => {
+  const handleAiFilter = (ids: string[] | null) => {
     setAiFilterIds(ids);
     if (ids) setSelected(new Set(ids));
     else { setSelected(new Set()); setPendingAiAction(null); }
   };
 
-  const handleAiAction = ({ type, value, ids }) => {
+  const handleAiAction = ({ type, value, ids }: { type: string; value: any; ids: string[] }) => {
     setData(prev => prev.map(r => ids.includes(r.id) ? { ...r, [type]: value } : r));
     setSelected(new Set());
     setAiFilterIds(null);
     setPendingAiAction(null);
   };
 
-  // Store pending action when AI makes a suggestion (passed up via prop)
-  const handleSetPendingAction = action => setPendingAiAction(action);
-
-  const handleBulkStatus = status => {
+  const handleBulkStatus = (status: string) => {
     const ids = [...selected].filter(id => rows.find(r => r.id === id));
     setData(prev => prev.map(r => ids.includes(r.id) ? { ...r, status } : r));
     setSelected(new Set());
     setPendingAiAction(null);
   };
 
-  const handleBulkOrgRequired = val => {
+  const handleBulkOrgRequired = (val: boolean) => {
     const ids = [...selected].filter(id => rows.find(r => r.id === id));
     setData(prev => prev.map(r => ids.includes(r.id) ? { ...r, orgRequired: val } : r));
     setSelected(new Set());
@@ -357,130 +273,150 @@ export default function PolicySets() {
   const bottomPad = (aiOpen || showActionBar) ? 72 : 24;
 
   return (
-    <div style={{ fontFamily: "Inter, system-ui, sans-serif", background: C.bg, minHeight: "100vh", padding: 24 }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: bottomPad }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, paddingBottom: bottomPad }}>
 
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Policy Sets</h2>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Define and manage onboarding requirement groups</p>
-          </div>
-          <button style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
-            {isAI && <span>✦</span>}+ New Policy Set
-          </button>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Policy Sets</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Define and manage onboarding requirement groups</p>
         </div>
+        <button onClick={() => setShowDrawer(true)}
+          style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
+          {isAI && <span>✦</span>}+ New Policy Set
+        </button>
+      </div>
 
-        {/* Toolbar */}
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-          <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
-            <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 14 }}>⌕</span>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search policy sets…"
-              style={{ width: "100%", padding: "8px 12px 8px 32px", border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, background: C.surface, outline: "none", boxSizing: "border-box" }} />
-          </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", background: C.surface, color: C.text, cursor: "pointer", outline: "none" }}>
-            <option value="all">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="draft">Draft</option>
-            <option value="archived">Archived</option>
-          </select>
-          <select value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
-            style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", background: C.surface, color: C.text, cursor: "pointer", outline: "none" }}>
-            <option value="all">All Org Levels</option>
-            <option value="yes">Org Required</option>
-            <option value="no">Not Org Required</option>
-          </select>
-          <div style={{ fontSize: 12, color: C.muted, marginLeft: "auto" }}>{rows.length} result{rows.length !== 1 ? "s" : ""}</div>
+      {/* Toolbar */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 14 }}>⌕</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search policy sets…"
+            style={{ width: "100%", padding: "8px 12px 8px 32px", border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, background: C.surface, outline: "none", boxSizing: "border-box" }} />
         </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", background: C.surface, color: C.text, cursor: "pointer", outline: "none" }}>
+          <option value="all">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="draft">Draft</option>
+          <option value="archived">Archived</option>
+        </select>
+        <select value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
+          style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", background: C.surface, color: C.text, cursor: "pointer", outline: "none" }}>
+          <option value="all">All Org Levels</option>
+          <option value="yes">Org Required</option>
+          <option value="no">Not Org Required</option>
+        </select>
+        <div style={{ fontSize: 12, color: C.muted, marginLeft: "auto" }}>{rows.length} result{rows.length !== 1 ? "s" : ""}</div>
+      </div>
 
-        {/* AI filter banner */}
-        {aiFilterIds && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: C.aiBg, border: `1px solid ${C.aiBorder}`, borderRadius: 8, marginBottom: 12, fontSize: 12, color: C.ai }}>
-            <span>✦</span>
-            <span><strong>AI filter active</strong> — showing {rows.length} policy set{rows.length !== 1 ? "s" : ""}. {selCount > 0 && `${selCount} selected.`}</span>
-          </div>
-        )}
+      {/* AI filter banner */}
+      {aiFilterIds && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: C.aiBg, border: `1px solid ${C.aiBorder}`, borderRadius: 8, fontSize: 12, color: C.ai }}>
+          <span>✦</span>
+          <span><strong>AI filter active</strong> — showing {rows.length} policy set{rows.length !== 1 ? "s" : ""}. {selCount > 0 && `${selCount} selected.`}</span>
+        </div>
+      )}
 
-        {/* Table */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr>
-                  {isPostMVP && (
-                    <th style={{ padding: "10px 14px", background: C.bg, borderBottom: `1px solid ${C.border}`, width: 36, position: "sticky", top: 0, zIndex: 2 }}>
-                      <Checkbox checked={allSelected} indeterminate={!allSelected && someSelected} onChange={toggleAll} />
-                    </th>
-                  )}
-                  <Th sortKey="name"            sortState={sort} onSort={handleSort}>Name</Th>
-                  <Th sortKey="orgRequired"     sortState={sort} onSort={handleSort}>Org Required</Th>
-                  <Th sortKey="activeInstances" sortState={sort} onSort={handleSort}>Active Instances</Th>
-                  <Th sortKey="orgReqs"         sortState={sort} onSort={handleSort}>Org Reqs</Th>
-                  <Th sortKey="gwbrs"           sortState={sort} onSort={handleSort}>GWBRs</Th>
-                  <Th sortKey="status"          sortState={sort} onSort={handleSort}>Status</Th>
-                  <Th sortKey="createdBy"       sortState={sort} onSort={handleSort}>Created By</Th>
-                  <Th sortKey="createdAt"       sortState={sort} onSort={handleSort}>Created</Th>
-                  <Th sortKey="modifiedBy"      sortState={sort} onSort={handleSort}>Modified By</Th>
-                  <Th sortKey="modifiedAt"      sortState={sort} onSort={handleSort}>Modified</Th>
-                  <th style={{ padding: "10px 14px", background: C.bg, borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 2 }} />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => {
-                  const isSel = selected.has(r.id);
-                  const isHl = aiFilterIds?.includes(r.id);
-                  return (
-                    <tr key={r.id}
-                      style={{ background: isSel ? C.accentBg : isHl ? C.aiBg : i % 2 === 0 ? C.surface : "#fafafa", transition: "background .1s" }}
-                      onMouseEnter={e => { if (!isSel && !isHl) e.currentTarget.style.background = C.rowHover; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = isSel ? C.accentBg : isHl ? C.aiBg : i % 2 === 0 ? C.surface : "#fafafa"; }}>
-                      {isPostMVP && (
-                        <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}>
-                          <Checkbox checked={isSel} indeterminate={false} onChange={() => toggleRow(r.id)} />
-                        </td>
-                      )}
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                          {isHl && <span style={{ fontSize: 10, color: C.ai }}>✦</span>}
-                          {r.name}
-                        </span>
-                      </td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center" }}>
-                        {r.orgRequired ? <span style={{ fontSize: 12, color: C.success }}>✓ Yes</span> : <span style={{ fontSize: 12, color: C.muted }}>—</span>}
-                      </td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.activeInstances > 0 ? C.text : C.muted, fontWeight: r.activeInstances > 0 ? 600 : 400 }}>
-                        {r.activeInstances || "0"}
-                      </td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: C.textMed }}>{r.orgReqs}</td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.gwbrs > 0 ? C.textMed : C.muted }}>{r.gwbrs || "—"}</td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}><Badge status={r.status} /></td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{r.createdBy}</td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{fmtDate(r.createdAt)}</td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{r.modifiedBy}</td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{fmtDate(r.modifiedAt)}</td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}>
-                        <button style={{ fontSize: 14, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>···</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {rows.length === 0 && (
-                  <tr><td colSpan={isPostMVP ? 12 : 11} style={{ padding: 40, textAlign: "center", color: C.muted, fontSize: 13 }}>No policy sets match your filters.</td></tr>
+      {/* Table */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr>
+                {isPostMVP && (
+                  <th style={{ padding: "10px 14px", background: C.bg, borderBottom: `1px solid ${C.border}`, width: 36, position: "sticky", top: 0, zIndex: 2 }}>
+                    <Checkbox checked={allSelected} indeterminate={!allSelected && someSelected} onChange={toggleAll} />
+                  </th>
                 )}
-              </tbody>
-            </table>
-          </div>
+                <Th sortKey="name"            sortState={sort} onSort={handleSort}>Name</Th>
+                <Th sortKey="orgRequired"     sortState={sort} onSort={handleSort}>Org Required</Th>
+                <Th sortKey="activeInstances" sortState={sort} onSort={handleSort}>Active Instances</Th>
+                <Th sortKey="orgReqs"         sortState={sort} onSort={handleSort}>Org Reqs</Th>
+                <Th sortKey="gwbrs"           sortState={sort} onSort={handleSort}>GWBRs</Th>
+                <Th sortKey="status"          sortState={sort} onSort={handleSort}>Status</Th>
+                <Th sortKey="createdBy"       sortState={sort} onSort={handleSort}>Created By</Th>
+                <Th sortKey="createdAt"       sortState={sort} onSort={handleSort}>Created</Th>
+                <Th sortKey="modifiedBy"      sortState={sort} onSort={handleSort}>Modified By</Th>
+                <Th sortKey="modifiedAt"      sortState={sort} onSort={handleSort}>Modified</Th>
+                <th style={{ padding: "10px 14px", background: C.bg, borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 2 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const isSel = selected.has(r.id);
+                const isHl  = aiFilterIds?.includes(r.id);
+                return (
+                  <tr key={r.id}
+                    style={{ background: isSel ? C.accentBg : isHl ? C.aiBg : i % 2 === 0 ? C.surface : C.bg, transition: "background .1s" }}
+                    onMouseEnter={e => { if (!isSel && !isHl) (e.currentTarget as HTMLElement).style.background = "#f9fafb"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isSel ? C.accentBg : isHl ? C.aiBg : i % 2 === 0 ? C.surface : C.bg; }}>
+                    {isPostMVP && (
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}>
+                        <Checkbox checked={isSel} indeterminate={false} onChange={() => toggleRow(r.id)} />
+                      </td>
+                    )}
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        {isHl && <span style={{ fontSize: 10, color: C.ai }}>✦</span>}
+                        {r.name}
+                      </span>
+                    </td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center" }}>
+                      {r.orgRequired ? <span style={{ fontSize: 12, color: C.success }}>✓ Yes</span> : <span style={{ fontSize: 12, color: C.muted }}>—</span>}
+                    </td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.activeInstances > 0 ? C.text : C.muted, fontWeight: r.activeInstances > 0 ? 600 : 400 }}>
+                      {r.activeInstances || "0"}
+                    </td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: C.textMed }}>{r.orgReqs}</td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.gwbrs > 0 ? C.textMed : C.muted }}>{r.gwbrs || "—"}</td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}><StatusBadge status={r.status} /></td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{r.createdBy}</td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{fmtDate(r.createdAt)}</td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{r.modifiedBy}</td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{fmtDate(r.modifiedAt)}</td>
+                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}>
+                      <button style={{ fontSize: 14, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>···</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && (
+                <tr><td colSpan={isPostMVP ? 12 : 11} style={{ padding: 40, textAlign: "center", color: C.muted, fontSize: 13 }}>No policy sets match your filters.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* ── Fixed bottom layer ── */}
+      {/* PolicySetDrawer */}
+      <PolicySetDrawer
+        open={showDrawer}
+        onClose={() => setShowDrawer(false)}
+        isPlus={isPostMVP}
+        onSave={({ name, gwbrIds, states, products, tasks }) => {
+          const id = `ps-${Date.now()}`;
+          setData(prev => [...prev, {
+            id,
+            name,
+            orgRequired: false,
+            activeInstances: 0,
+            orgReqs: tasks.length,
+            gwbrs: gwbrIds.length,
+            status: "draft",
+            createdBy: "You",
+            createdAt: new Date().toISOString().split("T")[0],
+            modifiedBy: "You",
+            modifiedAt: new Date().toISOString().split("T")[0],
+          }]);
+          setShowDrawer(false);
+        }}
+      />
 
-      {/* Shared bottom bar: Ask AI button (collapsed) + action bar side by side */}
+      {/* ── Fixed bottom layer ── */}
       {isAI && !aiOpen && (
         <div style={{
           position: "fixed", bottom: 0,
-          // Center when no action bar, left-align as part of full-width bar when action bar showing
           ...(showActionBar
             ? { left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 1200 }
             : { left: "50%", transform: "translateX(-50%)", width: "auto" }
@@ -489,21 +425,11 @@ export default function PolicySets() {
           zIndex: 40, borderRadius: "12px 12px 0 0", overflow: "hidden",
           boxShadow: "0 -4px 24px rgba(0,0,0,0.2)",
         }}>
-          {/* Ask AI — always shown when chat is collapsed */}
           <button onClick={() => setAiOpen(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "14px 20px",
-              background: "#5b21b6", color: "#fff", border: "none",
-              cursor: "pointer", fontSize: 13, fontWeight: 600,
-              flexShrink: 0,
-              borderRight: showActionBar ? "1px solid #7c3aed" : "none",
-              borderRadius: "12px 12px 0 0",
-            }}>
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 20px", background: "#5b21b6", color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, flexShrink: 0, borderRight: showActionBar ? "1px solid #7c3aed" : "none", borderRadius: "12px 12px 0 0" }}>
             <span style={{ fontSize: 14 }}>✦</span> Ask AI
           </button>
 
-          {/* Action bar fills the rest when selections exist */}
           {showActionBar && (
             <div style={{ flex: 1, background: "#111827", padding: "0 20px", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: "#fff", flexShrink: 0 }}>{selCount} selected</span>
@@ -533,7 +459,6 @@ export default function PolicySets() {
         </div>
       )}
 
-      {/* AI Chat panel (open state) */}
       {isAI && (
         <AIChat
           open={aiOpen}
@@ -546,9 +471,6 @@ export default function PolicySets() {
           onClearPending={() => setPendingAiAction(null)}
         />
       )}
-
-      {/* Intercept action suggestions from AI to store as pending */}
-      {/* We do this by wrapping AIChat's onAction — pendingAiAction is set when AI proposes an action */}
     </div>
   );
 }
