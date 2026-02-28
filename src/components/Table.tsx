@@ -5,6 +5,8 @@ export interface ColDef<T = any> {
   key: string;
   label: string;
   render?: (value: any, row: T) => React.ReactNode;
+  /** When true the column is hidden from the table */
+  hidden?: boolean;
 }
 
 interface TableProps<T extends { id: any }> {

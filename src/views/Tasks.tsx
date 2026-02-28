@@ -10,6 +10,8 @@ import { AIChat } from "../components/AIChat";
 import type { AIChatMessage, AIChatAction } from "../components/AIChat";
 import { BottomBar } from "../components/BottomBar";
 import { TaskDrawer } from "../components/TaskDrawer";
+import { ColumnDrawer } from "../components/ColumnDrawer";
+import { useColumnManager } from "../hooks/useColumnManager";
 
 const TASK_FILTER_DEFS = [
   { key: "status",         label: "Task Status",             options: ["Open", "Needs Approval", "Approved", "Rejected", "Done"] },
@@ -69,6 +71,7 @@ export function TasksView({ producers, setAllProducers, initFilter, onSaveView }
   const [aiOpen,        setAiOpen]        = useState(isAI);
   const [aiFilterIds,   setAiFilterIds]   = useState<string[] | null>(null);
   const [pendingAction, setPendingAction] = useState<AIChatAction | null>(null);
+  const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (initFilter && Object.keys(initFilter).length > 0) { setApplied(initFilter); setPending(initFilter); }
@@ -148,6 +151,17 @@ export function TasksView({ producers, setAllProducers, initFilter, onSaveView }
   const showActionBar = isPlus && selCount > 0 && !aiOpen;
   const bottomPad     = (aiOpen || showActionBar) ? 72 : 24;
 
+  const ALL_COLS = [
+    { key: "name",           label: "Task",           render: (v: any) => <span style={{ color: C.accentLight, fontWeight: 500 }}>{v}</span> },
+    { key: "producerName",   label: "Producer" },
+    { key: "producerNPN",    label: "NPN" },
+    { key: "classification", label: "Classification", render: (v: any) => <Badge label={v} small /> },
+    { key: "status",         label: "Status",         render: (v: any) => <Badge label={v} /> },
+    { key: "type",           label: "Type",           render: (v: any) => <span style={{ fontSize: 11, color: C.muted, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 7px" }}>{v}</span> },
+    { key: "owner",          label: "Owner" },
+  ];
+  const { visibleCols, cols, toggleCol, reorder, reset } = useColumnManager(ALL_COLS);
+
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingBottom: bottomPad }}>
@@ -161,6 +175,10 @@ export function TasksView({ producers, setAllProducers, initFilter, onSaveView }
             {isPlus && hasFilters && (
               <button onClick={() => setSaveOpen(true)} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, color: C.accent, background: C.accentBg, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>⊕ Save view</button>
             )}
+            <button onClick={() => setColumnDrawerOpen(true)}
+              style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: C.textMed, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
+              ⊞ Columns
+            </button>
             <button onClick={() => { setPending(applied); setFilterOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: activeCount > 0 ? C.accent : C.textMed, background: activeCount > 0 ? C.accentBg : C.surface, border: `1px solid ${activeCount > 0 ? C.accent + "55" : C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
               ⚙ Filters {activeCount > 0 && <span style={{ background: C.accent, color: "#fff", borderRadius: 99, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{activeCount}</span>}
@@ -177,15 +195,7 @@ export function TasksView({ producers, setAllProducers, initFilter, onSaveView }
         {/* Table */}
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           <Table activeId={drawerTask?.id} selectable onToggle={toggleOne} onToggleAll={toggleAll} selected={selected} onRow={handleRowClick}
-            cols={[
-              { key: "name",           label: "Task",           render: v => <span style={{ color: C.accentLight, fontWeight: 500 }}>{v}</span> },
-              { key: "producerName",   label: "Producer" },
-              { key: "producerNPN",    label: "NPN" },
-              { key: "classification", label: "Classification", render: v => <Badge label={v} small /> },
-              { key: "status",         label: "Status",         render: v => <Badge label={v} /> },
-              { key: "type",           label: "Type",           render: v => <span style={{ fontSize: 11, color: C.muted, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 7px" }}>{v}</span> },
-              { key: "owner",          label: "Owner" },
-            ]} rows={filtered} />
+            cols={visibleCols} rows={filtered} />
         </div>
       </div>
 
@@ -222,6 +232,8 @@ export function TasksView({ producers, setAllProducers, initFilter, onSaveView }
       )}
 
       <FilterDrawer open={filterOpen} onClose={() => setFilterOpen(false)} filterDefs={TASK_FILTER_DEFS} pending={pending} setPending={setPending} onApply={f => setApplied(f)} onClear={clearFilters} />
+
+      <ColumnDrawer open={columnDrawerOpen} onClose={() => setColumnDrawerOpen(false)} cols={cols} onToggle={toggleCol} onReorder={reorder} onReset={reset} />
 
       {drawerTask && (
         <TaskDrawer
