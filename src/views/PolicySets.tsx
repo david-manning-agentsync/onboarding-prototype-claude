@@ -48,11 +48,6 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── Checkbox ─────────────────────────────────────────────────────────────────
 import { useRef, useEffect } from "react";
-function Checkbox({ checked, indeterminate, onChange }: { checked: boolean; indeterminate: boolean; onChange: () => void }) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate; }, [indeterminate]);
-  return <input ref={ref} type="checkbox" checked={checked} onChange={onChange} style={{ cursor: "pointer", width: 15, height: 15, accentColor: C.accent }} />;
-}
 
 // ─── AI message handler (PolicySets-specific logic) ───────────────────────────
 function usePolicySetsAI(onFilter: (ids: string[] | null) => void) {
@@ -114,7 +109,7 @@ export function PolicySets() {
     return true;
   });
 
-  const { selected, toggleRow, toggleAll, selCount, allSelected, someSelected, setFromIds, clear } = useTableSelection(rows);
+  const { selected, toggleRow, toggleAll, selCount, setFromIds, clear } = useTableSelection(rows);
 
   const ALL_COLS = [
     { key: "name",            label: "Name",             render: (v: any) => <span style={{ fontWeight: 600, color: C.text }}>{v}</span> },
