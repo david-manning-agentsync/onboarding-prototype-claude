@@ -233,7 +233,7 @@ export function TasksView({ producers, setAllProducers, initFilter, onSaveView }
 
       <FilterDrawer open={filterOpen} onClose={() => setFilterOpen(false)} filterDefs={TASK_FILTER_DEFS} pending={pending} setPending={setPending} onApply={f => setApplied(f)} onClear={clearFilters} />
 
-      <ColumnDrawer open={columnDrawerOpen} onClose={() => setColumnDrawerOpen(false)} cols={cols} onToggle={toggleCol} onReorder={reorder} onReset={reset} />
+      <ColumnDrawer open={columnDrawerOpen} onClose={() => setColumnDrawerOpen(false)} cols={cols} onToggle={toggleCol} onReorder={reorder} onReset={() => reset(ALL_COLS)} />
 
       {drawerTask && (
         <TaskDrawer
