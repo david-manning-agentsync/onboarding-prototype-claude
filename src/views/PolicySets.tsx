@@ -47,7 +47,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ─── Checkbox ─────────────────────────────────────────────────────────────────
-import { useRef, useEffect } from "react";
+import { useEffect } from "react";
 
 // ─── AI message handler (PolicySets-specific logic) ───────────────────────────
 function usePolicySetsAI(onFilter: (ids: string[] | null) => void) {
