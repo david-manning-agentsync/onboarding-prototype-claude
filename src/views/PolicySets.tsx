@@ -3,6 +3,9 @@ import { C } from "../theme";
 import { useVersion } from "../components/UI";
 import { PolicySetDrawer } from "../components/PolicySetDrawer";
 import type { PolicySetDrawerProps } from "../components/PolicySetDrawer";
+import { Table } from "../components/Table";
+import { ColumnDrawer } from "../components/ColumnDrawer";
+import { useColumnManager } from "../hooks/useColumnManager";
 import { AIChat } from "../components/AIChat";
 import type { AIChatMessage, AIChatAction } from "../components/AIChat";
 import { BottomBar } from "../components/BottomBar";
@@ -51,20 +54,6 @@ function Checkbox({ checked, indeterminate, onChange }: { checked: boolean; inde
   return <input ref={ref} type="checkbox" checked={checked} onChange={onChange} style={{ cursor: "pointer", width: 15, height: 15, accentColor: C.accent }} />;
 }
 
-// ─── Table Header Cell ────────────────────────────────────────────────────────
-function Th({ children, sortKey, sortState, onSort }: { children: React.ReactNode; sortKey?: string; sortState: { key: string; dir: string }; onSort: (k: string) => void }) {
-  const active = sortState?.key === sortKey;
-  return (
-    <th onClick={() => sortKey && onSort(sortKey)}
-      style={{ padding: "10px 14px", fontSize: 11, fontWeight: 600, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", whiteSpace: "nowrap", cursor: sortKey ? "pointer" : "default", userSelect: "none", background: C.bg, borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 2 }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        {children}
-        {sortKey && <span style={{ opacity: active ? 1 : 0.3, fontSize: 10 }}>{active && sortState.dir === "asc" ? "▲" : "▼"}</span>}
-      </span>
-    </th>
-  );
-}
-
 // ─── AI message handler (PolicySets-specific logic) ───────────────────────────
 function usePolicySetsAI(onFilter: (ids: string[] | null) => void) {
   return (msg: string, addMessage: (m: AIChatMessage) => void, setLoading: (v: boolean) => void) => {
@@ -110,13 +99,11 @@ export function PolicySets() {
   const [search,          setSearch]          = useState("");
   const [statusFilter,    setStatusFilter]    = useState("all");
   const [orgFilter,       setOrgFilter]       = useState("all");
-  const [sort,            setSort]            = useState({ key: "name", dir: "asc" });
   const [aiOpen,          setAiOpen]          = useState(isAI);
   const [aiFilterIds,     setAiFilterIds]     = useState<string[] | null>(null);
   const [pendingAiAction, setPendingAiAction] = useState<AIChatAction | null>(null);
   const [showDrawer,      setShowDrawer]      = useState(false);
-
-  const handleSort = (k: string) => setSort(prev => ({ key: k, dir: prev.key === k && prev.dir === "asc" ? "desc" : "asc" }));
+  const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
 
   let rows = data.filter(r => {
     if (aiFilterIds && !aiFilterIds.includes(r.id)) return false;
@@ -126,14 +113,22 @@ export function PolicySets() {
     if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  rows = [...rows].sort((a: any, b: any) => {
-    let av = a[sort.key], bv = b[sort.key];
-    if (typeof av === "boolean") { av = av ? 1 : 0; bv = bv ? 1 : 0; }
-    if (typeof av === "number") return sort.dir === "asc" ? av - bv : bv - av;
-    return sort.dir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-  });
 
   const { selected, toggleRow, toggleAll, selCount, allSelected, someSelected, setFromIds, clear } = useTableSelection(rows);
+
+  const ALL_COLS = [
+    { key: "name",            label: "Name",             render: (v: any) => <span style={{ fontWeight: 600, color: C.text }}>{v}</span> },
+    { key: "orgRequired",     label: "Org Required",     render: (v: any) => v ? <span style={{ fontSize: 12, color: C.success }}>✓ Yes</span> : <span style={{ fontSize: 12, color: C.muted }}>—</span> },
+    { key: "activeInstances", label: "Active Instances" },
+    { key: "orgReqs",         label: "Org Reqs" },
+    { key: "gwbrs",           label: "GWBRs",            render: (v: any) => v > 0 ? v : "—" },
+    { key: "status",          label: "Status",           render: (v: any) => <StatusBadge status={v} /> },
+    { key: "createdBy",       label: "Created By" },
+    { key: "createdAt",       label: "Created",          render: (v: any) => fmtDate(v) },
+    { key: "modifiedBy",      label: "Modified By" },
+    { key: "modifiedAt",      label: "Modified",         render: (v: any) => fmtDate(v) },
+  ];
+  const { visibleCols, cols, toggleCol, reorder, reset } = useColumnManager(ALL_COLS);
 
   const handleAiFilter = (ids: string[] | null) => {
     setAiFilterIds(ids);
@@ -159,7 +154,7 @@ export function PolicySets() {
   };
 
   const onSendMessage = usePolicySetsAI(handleAiFilter);
-  
+
   useEffect(() => {
   if (selCount > 0 && aiOpen) setAiOpen(false);
 }, [selCount]);
@@ -176,10 +171,16 @@ export function PolicySets() {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Policy Sets</h2>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Define and manage onboarding requirement groups</p>
         </div>
-        <button onClick={() => setShowDrawer(true)}
-          style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
-          {isAI && <span>✦</span>}+ New Policy Set
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setColumnDrawerOpen(true)}
+            style={{ fontSize: 13, fontWeight: 500, color: C.textMed, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
+            ⊞ Columns
+          </button>
+          <button onClick={() => setShowDrawer(true)}
+            style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
+            {isAI && <span>✦</span>}+ New Policy Set
+          </button>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -215,71 +216,11 @@ export function PolicySets() {
 
       {/* Table */}
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr>
-                {isPostMVP && (
-                  <th style={{ padding: "10px 14px", background: C.bg, borderBottom: `1px solid ${C.border}`, width: 36, position: "sticky", top: 0, zIndex: 2 }}>
-                    <Checkbox checked={allSelected} indeterminate={!allSelected && someSelected} onChange={toggleAll} />
-                  </th>
-                )}
-                <Th sortKey="name"            sortState={sort} onSort={handleSort}>Name</Th>
-                <Th sortKey="orgRequired"     sortState={sort} onSort={handleSort}>Org Required</Th>
-                <Th sortKey="activeInstances" sortState={sort} onSort={handleSort}>Active Instances</Th>
-                <Th sortKey="orgReqs"         sortState={sort} onSort={handleSort}>Org Reqs</Th>
-                <Th sortKey="gwbrs"           sortState={sort} onSort={handleSort}>GWBRs</Th>
-                <Th sortKey="status"          sortState={sort} onSort={handleSort}>Status</Th>
-                <Th sortKey="createdBy"       sortState={sort} onSort={handleSort}>Created By</Th>
-                <Th sortKey="createdAt"       sortState={sort} onSort={handleSort}>Created</Th>
-                <Th sortKey="modifiedBy"      sortState={sort} onSort={handleSort}>Modified By</Th>
-                <Th sortKey="modifiedAt"      sortState={sort} onSort={handleSort}>Modified</Th>
-                <th style={{ padding: "10px 14px", background: C.bg, borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 2 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const isSel = selected.has(r.id);
-                const isHl  = aiFilterIds?.includes(r.id);
-                return (
-                  <tr key={r.id}
-                    style={{ background: isSel ? C.accentBg : isHl ? C.aiBg : i % 2 === 0 ? C.surface : C.bg, transition: "background .1s" }}
-                    onMouseEnter={e => { if (!isSel && !isHl) (e.currentTarget as HTMLElement).style.background = "#f9fafb"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isSel ? C.accentBg : isHl ? C.aiBg : i % 2 === 0 ? C.surface : C.bg; }}>
-                    {isPostMVP && (
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}>
-                        <Checkbox checked={isSel} indeterminate={false} onChange={() => toggleRow(r.id)} />
-                      </td>
-                    )}
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                        {isHl && <span style={{ fontSize: 10, color: C.ai }}>✦</span>}
-                        {r.name}
-                      </span>
-                    </td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center" }}>
-                      {r.orgRequired ? <span style={{ fontSize: 12, color: C.success }}>✓ Yes</span> : <span style={{ fontSize: 12, color: C.muted }}>—</span>}
-                    </td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.activeInstances > 0 ? C.text : C.muted, fontWeight: r.activeInstances > 0 ? 600 : 400 }}>{r.activeInstances || "0"}</td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: C.textMed }}>{r.orgReqs}</td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, textAlign: "center", color: r.gwbrs > 0 ? C.textMed : C.muted }}>{r.gwbrs || "—"}</td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}><StatusBadge status={r.status} /></td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{r.createdBy}</td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{fmtDate(r.createdAt)}</td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{r.modifiedBy}</td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}`, color: C.textDim, whiteSpace: "nowrap" }}>{fmtDate(r.modifiedAt)}</td>
-                    <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.borderLight}` }}>
-                      <button style={{ fontSize: 14, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>···</button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {rows.length === 0 && (
-                <tr><td colSpan={isPostMVP ? 12 : 11} style={{ padding: 40, textAlign: "center", color: C.muted, fontSize: 13 }}>No policy sets match your filters.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          selectable onToggle={toggleRow} onToggleAll={toggleAll} selected={selected}
+          defaultSortKey="name"
+          cols={visibleCols}
+          rows={rows} />
       </div>
 
       {/* Drawer */}
@@ -288,6 +229,8 @@ export function PolicySets() {
           setData(prev => [...prev, { id: `ps-${Date.now()}`, name, orgRequired: false, activeInstances: 0, orgReqs: tasks.length, gwbrs: gwbrIds.length, status: "draft", createdBy: "You", createdAt: new Date().toISOString().split("T")[0], modifiedBy: "You", modifiedAt: new Date().toISOString().split("T")[0] }]);
           setShowDrawer(false);
         }} />
+
+      <ColumnDrawer open={columnDrawerOpen} onClose={() => setColumnDrawerOpen(false)} cols={cols} onToggle={toggleCol} onReorder={reorder} onReset={() => reset(ALL_COLS)} />
 
       {/* Bottom layer */}
       {isAI && !aiOpen && (
