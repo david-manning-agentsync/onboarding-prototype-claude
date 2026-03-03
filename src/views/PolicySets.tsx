@@ -106,7 +106,6 @@ export function PolicySets({ isAdmin = false }: { isAdmin?: boolean }) {
   const [showDrawer,       setShowDrawer]       = useState(false);
 
   const activeCount  = Object.values(applied).filter(v => v?.length > 0).length;
-  const hasFilters   = activeCount > 0 || !!search;
   const clearFilters = () => { setApplied({}); setPending({}); };
 
   const rows = data.filter(r => {
@@ -172,7 +171,7 @@ export function PolicySets({ isAdmin = false }: { isAdmin?: boolean }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Policy Sets</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>{rows.length} of {data.length} policy sets</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>{isAdmin ? "Admin Settings" : `${rows.length} of ${data.length} policy sets`}</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setColumnDrawerOpen(true)}
