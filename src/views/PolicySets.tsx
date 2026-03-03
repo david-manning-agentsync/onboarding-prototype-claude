@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { C } from "../theme";
-import { useVersion } from "../components/UI";
-import { PolicySetDrawer } from "../components/PolicySetDrawer";
-import type { PolicySetDrawerProps } from "../components/PolicySetDrawer";
+import { useVersion, ActiveFilters } from "../components/UI";
+import { SearchBar } from "../components/SearchBar";
+import { FilterDrawer } from "../components/FilterDrawer";
 import { Table } from "../components/Table";
 import { ColumnDrawer } from "../components/ColumnDrawer";
 import { useColumnManager } from "../hooks/useColumnManager";
+import { PolicySetDrawer } from "../components/PolicySetDrawer";
+import type { PolicySetDrawerProps } from "../components/PolicySetDrawer";
 import { AIChat } from "../components/AIChat";
 import type { AIChatMessage, AIChatAction } from "../components/AIChat";
 import { BottomBar } from "../components/BottomBar";
@@ -24,6 +26,11 @@ const SEED = [
   { id: "ps-8", name: "2023 Compliance Bundle",              orgRequired: false, activeInstances: 0,   orgReqs: 6, gwbrs: 0, status: "archived", createdBy: "Sara Okonkwo", createdAt: "2023-11-30", modifiedBy: "Sara Okonkwo", modifiedAt: "2024-01-08" },
 ];
 
+const PS_FILTER_DEFS = [
+  { key: "status",      label: "Status",       options: ["active", "draft", "archived"] },
+  { key: "orgRequired", label: "Org Required", options: ["Yes", "No"] },
+];
+
 const STATUS_COLORS = {
   active:   { color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
   draft:    { color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
@@ -37,7 +44,7 @@ const AI_PROMPTS = [
   "Show active policy sets with the most producers",
 ];
 
-const fmtDate  = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const fmtDate   = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const monthsAgo = (d: string, n: number) => { const t = new Date(d), c = new Date(); c.setMonth(c.getMonth() - n); return t < c; };
 
 // ─── Badge ────────────────────────────────────────────────────────────────────
@@ -46,10 +53,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span style={{ fontSize: 11, fontWeight: 600, color: s.color, background: s.bg, border: `1px solid ${s.border}`, borderRadius: 99, padding: "2px 8px", textTransform: "capitalize" }}>{status}</span>;
 }
 
-// ─── Checkbox ─────────────────────────────────────────────────────────────────
-import { useEffect } from "react";
-
-// ─── AI message handler (PolicySets-specific logic) ───────────────────────────
+// ─── AI message handler ───────────────────────────────────────────────────────
 function usePolicySetsAI(onFilter: (ids: string[] | null) => void) {
   return (msg: string, addMessage: (m: AIChatMessage) => void, setLoading: (v: boolean) => void) => {
     setTimeout(async () => {
@@ -85,31 +89,33 @@ function usePolicySetsAI(onFilter: (ids: string[] | null) => void) {
 }
 
 // ─── Main View ────────────────────────────────────────────────────────────────
-export function PolicySets() {
+export function PolicySets({ isAdmin = false }: { isAdmin?: boolean }) {
   const version   = useVersion();
   const isAI      = version === "ai";
   const isPostMVP = version === "post-mvp" || isAI;
 
-  const [data,            setData]            = useState(SEED);
-  const [search,          setSearch]          = useState("");
-  const [statusFilter,    setStatusFilter]    = useState("all");
-  const [orgFilter,       setOrgFilter]       = useState("all");
-  const [aiOpen,          setAiOpen]          = useState(isAI);
-  const [aiFilterIds,     setAiFilterIds]     = useState<string[] | null>(null);
-  const [pendingAiAction, setPendingAiAction] = useState<AIChatAction | null>(null);
-  const [showDrawer,      setShowDrawer]      = useState(false);
+  const [data,             setData]             = useState(SEED);
+  const [search,           setSearch]           = useState("");
+  const [applied,          setApplied]          = useState<Record<string, string[]>>({});
+  const [pending,          setPending]          = useState<Record<string, string[]>>({});
+  const [filterOpen,       setFilterOpen]       = useState(false);
   const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
+  const [aiOpen,           setAiOpen]           = useState(isAI);
+  const [aiFilterIds,      setAiFilterIds]      = useState<string[] | null>(null);
+  const [pendingAiAction,  setPendingAiAction]  = useState<AIChatAction | null>(null);
+  const [showDrawer,       setShowDrawer]       = useState(false);
 
-  let rows = data.filter(r => {
+  const activeCount  = Object.values(applied).filter(v => v?.length > 0).length;
+  const hasFilters   = activeCount > 0 || !!search;
+  const clearFilters = () => { setApplied({}); setPending({}); };
+
+  const rows = data.filter(r => {
     if (aiFilterIds && !aiFilterIds.includes(r.id)) return false;
-    if (statusFilter !== "all" && r.status !== statusFilter) return false;
-    if (orgFilter === "yes" && !r.orgRequired) return false;
-    if (orgFilter === "no" && r.orgRequired) return false;
     if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (applied.status?.length      && !applied.status.includes(r.status)) return false;
+    if (applied.orgRequired?.length && !applied.orgRequired.includes(r.orgRequired ? "Yes" : "No")) return false;
     return true;
   });
-
-  const { selected, toggleRow, toggleAll, selCount, setFromIds, clear } = useTableSelection(rows);
 
   const ALL_COLS = [
     { key: "name",            label: "Name",             render: (v: any) => <span style={{ fontWeight: 600, color: C.text }}>{v}</span> },
@@ -124,6 +130,8 @@ export function PolicySets() {
     { key: "modifiedAt",      label: "Modified",         render: (v: any) => fmtDate(v) },
   ];
   const { visibleCols, cols, toggleCol, reorder, reset } = useColumnManager(ALL_COLS);
+
+  const { selected, toggleRow, toggleAll, selCount, setFromIds, clear } = useTableSelection(rows);
 
   const handleAiFilter = (ids: string[] | null) => {
     setAiFilterIds(ids);
@@ -151,8 +159,8 @@ export function PolicySets() {
   const onSendMessage = usePolicySetsAI(handleAiFilter);
 
   useEffect(() => {
-  if (selCount > 0 && aiOpen) setAiOpen(false);
-}, [selCount]);
+    if (selCount > 0 && aiOpen) setAiOpen(false);
+  }, [selCount]);
 
   const showActionBar = isPostMVP && selCount > 0 && !aiOpen;
   const bottomPad     = (aiOpen || showActionBar) ? 72 : 24;
@@ -164,41 +172,30 @@ export function PolicySets() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Policy Sets</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>Define and manage onboarding requirement groups</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>{rows.length} of {data.length} policy sets</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setColumnDrawerOpen(true)}
-            style={{ fontSize: 13, fontWeight: 500, color: C.textMed, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
+            style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: C.textMed, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
             ⊞ Columns
           </button>
-          <button onClick={() => setShowDrawer(true)}
-            style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
-            {isAI && <span>✦</span>}+ New Policy Set
+          <button onClick={() => { setPending(applied); setFilterOpen(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: activeCount > 0 ? C.accent : C.textMed, background: activeCount > 0 ? C.accentBg : C.surface, border: `1px solid ${activeCount > 0 ? C.accent + "55" : C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
+            ⚙ Filters {activeCount > 0 && <span style={{ background: C.accent, color: "#fff", borderRadius: 99, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{activeCount}</span>}
           </button>
+          {isAdmin && (
+            <button onClick={() => setShowDrawer(true)}
+              style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: isAI ? C.ai : C.accent, border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
+              {isAI && <span>✦</span>}+ New Policy Set
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
-          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 14 }}>⌕</span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search policy sets…"
-            style={{ width: "100%", padding: "8px 12px 8px 32px", border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, background: C.surface, outline: "none", boxSizing: "border-box" }} />
-        </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", background: C.surface, color: C.text, cursor: "pointer", outline: "none" }}>
-          <option value="all">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="draft">Draft</option>
-          <option value="archived">Archived</option>
-        </select>
-        <select value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
-          style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", background: C.surface, color: C.text, cursor: "pointer", outline: "none" }}>
-          <option value="all">All Org Levels</option>
-          <option value="yes">Org Required</option>
-          <option value="no">Not Org Required</option>
-        </select>
-        <div style={{ fontSize: 12, color: C.muted, marginLeft: "auto" }}>{rows.length} result{rows.length !== 1 ? "s" : ""}</div>
+      {/* Search + filters */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <SearchBar placeholder="Search policy sets…" value={search} onChange={setSearch} />
+        <ActiveFilters filters={applied} onRemove={(k, v) => setApplied(prev => ({ ...prev, [k]: (prev[k] || []).filter(x => x !== v) }))} onClear={clearFilters} />
       </div>
 
       {/* AI filter banner */}
@@ -218,14 +215,14 @@ export function PolicySets() {
           rows={rows} />
       </div>
 
-      {/* Drawer */}
+      {/* Drawers */}
+      <FilterDrawer open={filterOpen} onClose={() => setFilterOpen(false)} filterDefs={PS_FILTER_DEFS} pending={pending} setPending={setPending} onApply={f => setApplied(f)} onClear={clearFilters} />
+      <ColumnDrawer open={columnDrawerOpen} onClose={() => setColumnDrawerOpen(false)} cols={cols} onToggle={toggleCol} onReorder={reorder} onReset={() => reset(ALL_COLS)} />
       <PolicySetDrawer open={showDrawer} onClose={() => setShowDrawer(false)} isPlus={isPostMVP}
         onSave={({ name, gwbrIds, tasks }: SavePayload) => {
           setData(prev => [...prev, { id: `ps-${Date.now()}`, name, orgRequired: false, activeInstances: 0, orgReqs: tasks.length, gwbrs: gwbrIds.length, status: "draft", createdBy: "You", createdAt: new Date().toISOString().split("T")[0], modifiedBy: "You", modifiedAt: new Date().toISOString().split("T")[0] }]);
           setShowDrawer(false);
         }} />
-
-      <ColumnDrawer open={columnDrawerOpen} onClose={() => setColumnDrawerOpen(false)} cols={cols} onToggle={toggleCol} onReorder={reorder} onReset={() => reset(ALL_COLS)} />
 
       {/* Bottom layer */}
       {isAI && !aiOpen && (
@@ -236,7 +233,7 @@ export function PolicySets() {
           onClear={clear}
           groups={[
             { label: "Status", actions: ["active", "draft", "archived"].map(s => ({ label: s, onClick: () => handleBulkStatus(s) })) },
-            { label: "",       actions: [
+            { label: "", actions: [
               { label: "Set Org Required", highlight: true, onClick: () => handleBulkOrgRequired(true) },
               { label: "Remove",           muted: true,     onClick: () => handleBulkOrgRequired(false) },
             ]},
