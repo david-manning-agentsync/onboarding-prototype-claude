@@ -24,12 +24,6 @@ const PERSONAS = [
   { id: "producer", label: "Jordan Smith", role: "Producer",          initials: "JS", color: "#7c3aed", hasAdmin: false },
 ];
 
-const VERSIONS = [
-  { id: "mvp",      short: "MVP",  color: C.success },
-  { id: "post-mvp", short: "Post", color: C.accent  },
-  { id: "ai",       short: "AI",   color: C.ai      },
-];
-
 const S = {
   bg:         "#FFF7ED",
   border:     "#FDE8D0",
