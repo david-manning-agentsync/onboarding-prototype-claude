@@ -57,7 +57,7 @@ export function Dashboard({ setNav, setFilter, producers }: {
   const tTot = st.reduce((s, d) => s + d.count, 0);
 
   const cards = [
-    { title: "Producers by Classification", sub: "Click a row to filter", data: sc, total: tot,  nav: "producers", filterKey: "classification", foot: <><b>{tot}</b> total producers</> },
+    { title: "Producers by Readiness", sub: "Click a row to filter", data: sc, total: tot,  nav: "producers", filterKey: "classification", foot: <><b>{tot}</b> total producers</> },
     { title: "Producers by Status",         sub: "Click a row to filter", data: ss, total: tot,  nav: "producers", filterKey: "status",         foot: <><b>{tot}</b> total producers</> },
     { title: "Tasks by Status",             sub: "Click a row to filter tasks", data: st, total: tTot, nav: "tasks", filterKey: "status",        foot: <><b>{tot}</b> producers · <b>{tTot}</b> tasks</> },
   ];

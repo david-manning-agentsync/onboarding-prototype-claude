@@ -4,7 +4,7 @@ import { C } from "../theme";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TaskType       = "internal" | "external";
+type TaskType       = "internal" | "partner";
 type OwnerType      = "producer" | "internal";
 type ApprovalType   = "yes" | "no";
 type ComponentType  = "text" | "video" | "file" | "freetext" | "picklist" | "boolean" | "fileupload" | "signature" | "bankaccount";
@@ -528,7 +528,7 @@ function TaskEditor({ task, onChange, onBack, onDone }: { task: Task; onChange: 
               <input value={task.name} onChange={e => onChange({ ...task, name: e.target.value })} placeholder="e.g. E&O Certificate Upload" style={{ width: "100%", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Type</div><SegToggle options={[["internal","Internal"],["external","External"]]} value={task.type} onChange={v => onChange({ ...task, type: v as TaskType })} /></div>
+              <div><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Category</div><SegToggle options={[["internal","Internal"],["partner","Partner"]]} value={task.type} onChange={v => onChange({ ...task, type: v as TaskType })} /></div>
               <div><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Owner</div><SegToggle options={[["producer","Producer"],["Operations","Operations"]]} value={task.owner} onChange={v => onChange({ ...task, owner: v as OwnerType })} /></div>
             </div>
             <div><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Requires approval</div><SegToggle options={[["no","No"],["yes","Yes"]]} value={task.approval} onChange={v => onChange({ ...task, approval: v as ApprovalType })} /></div>
@@ -564,7 +564,7 @@ function TaskEditor({ task, onChange, onBack, onDone }: { task: Task; onChange: 
 
 const TYPE_COLORS: Record<TaskType, { bg: string; text: string; border: string }> = {
   internal: { bg: "#eff6ff", text: "#2563eb", border: "#bfdbfe" },
-  external: { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0" },
+  partner: { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0" },
 };
 const OWNER_LABEL: Record<OwnerType, string> = { producer: "Producer", internal: "Internal" };
 

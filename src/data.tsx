@@ -8,6 +8,9 @@ export type Task = {
   required: boolean;
   detail: string;
   rejectionNote: string;
+  question?: string;
+  yesWarning?: string;
+  answer?: string;
 };
 
 export type ActivityEntry = {
@@ -173,6 +176,22 @@ export const PRODUCERS_SEED: Producer[] = [
   ],activityLog:[
     {date:"Nov 25, 2024",event:"Status changed",detail:"Process terminated"},
     {date:"Nov 20, 2024",event:"Onboarding started",detail:"Producer invited"},
+  ]},
+  {id:19,name:"Jordan Smith",npn:"5512984",classification:"Needs LOAs",status:"In Progress",invited:"Feb 3, 2025",lastTask:"Feb 5, 2025",resident:"TX",tasks:[
+    {id:"t19a",name:"Submit NPN",type:"Regulatory",status:"Done",owner:"Producer",required:true,detail:"Provide your National Producer Number so we can verify your license status with NIPR.",rejectionNote:""},
+    {id:"t19b",name:"Confirm Resident State",type:"Regulatory",status:"Done",owner:"Producer",required:true,detail:"Confirm the state where you hold your primary insurance license.",rejectionNote:""},
+    {id:"t19c",name:"Prior License Denial or Revocation",type:"Regulatory",status:"Open",owner:"Producer",required:true,detail:"Texas requires all applicants to disclose whether any insurance license application has ever been denied, or whether any license has been revoked or suspended in any state, territory, or jurisdiction.",question:"Have you ever had an insurance license application denied, or had a license revoked or suspended in any state or jurisdiction?",yesWarning:"You will need to provide additional documentation. Your agency administrator will follow up with next steps before this task can be completed.",rejectionNote:""},
+    {id:"t19d",name:"Felony or Criminal Conviction Disclosure",type:"Regulatory",status:"Open",owner:"Producer",required:true,detail:"The Texas Department of Insurance requires disclosure of any felony conviction or any misdemeanor involving dishonesty, breach of trust, or a financial crime. This includes convictions that have been expunged or pardoned in some states.",question:"Have you ever been convicted of a felony, or a misdemeanor involving dishonesty, breach of trust, or a financial crime?",yesWarning:"A prior conviction does not automatically disqualify you, but you must disclose it. Your agency will review and may request supporting documents.",rejectionNote:""},
+    {id:"t19e",name:"Outstanding Judgment or Tax Lien Disclosure",type:"Regulatory",status:"Open",owner:"Producer",required:true,detail:"Texas requires producers to disclose any unsatisfied judgments or outstanding tax liens. This includes federal and state tax liens, civil judgments, and unpaid child support orders that have been filed as liens.",question:"Do you have any unsatisfied judgments, outstanding tax liens, or unpaid civil judgments currently on file against you?",yesWarning:"Please contact your agency administrator before proceeding. Additional review will be required prior to license submission.",rejectionNote:""},
+    {id:"t19f",name:"E&O Insurance Verification",type:"Org",status:"Needs Approval",owner:"Producer",required:true,detail:"Upload a current certificate of Errors & Omissions insurance. Coverage must be at least $1M per occurrence.",rejectionNote:""},
+    {id:"t19g",name:"Compliance Training",type:"Org",status:"Open",owner:"Producer",required:true,detail:"Complete the annual compliance training module. This typically takes 20–30 minutes and must be finished before you can be marked sell-ready.",rejectionNote:""},
+    {id:"t19h",name:"Code of Conduct Acknowledgment",type:"Org",status:"Open",owner:"Producer",required:true,detail:"Review and acknowledge the agency's code of conduct policy.",rejectionNote:""},
+    {id:"t19i",name:"IT Provisioning",type:"Org",status:"Open",owner:"Customer",required:true,detail:"Your agency's IT team will provision your system access. No action needed on your end — this task is assigned to your agency administrator.",rejectionNote:""},
+  ],activityLog:[
+    {date:"Feb 5, 2025",event:"Task completed",detail:"Background Check Authorization marked done"},
+    {date:"Feb 5, 2025",event:"Task completed",detail:"Confirm Resident State marked done"},
+    {date:"Feb 4, 2025",event:"Task submitted",detail:"E&O Insurance Verification submitted for approval"},
+    {date:"Feb 3, 2025",event:"Onboarding started",detail:"Producer invited"},
   ]},
 ];
 

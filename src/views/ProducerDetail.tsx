@@ -1,6 +1,5 @@
 // src/views/ProducerDetail.tsx
 // Full producer detail view — Tasks (split panel), Details, and NIPR tabs (Licenses, Appointments, Regulatory Actions)
-// Replaces the inline ProducerDetail component that previously lived in Producers.tsx
 
 import { useState, useMemo } from "react";
 import { C, Badge } from "../theme";
@@ -35,29 +34,37 @@ interface RegulatoryAction {
   disposition: "Closed" | "Open" | "Pending";
 }
 
-// ─── Mock NIPR Data (keyed by NPN — realistic but static) ────────────────────
+// ─── Mock NIPR Data ───────────────────────────────────────────────────────────
 
 const MOCK_LICENSES: Record<string, License[]> = {
   "8821033": [
-    { state: "NC", licenseNumber: "NC1234567", loa: "Life", status: "Active", effectiveDate: "Jan 15, 2020", expirationDate: "Dec 31, 2025" },
-    { state: "NC", licenseNumber: "NC1234567", loa: "Health", status: "Active", effectiveDate: "Jan 15, 2020", expirationDate: "Dec 31, 2025" },
-    { state: "SC", licenseNumber: "SC9876543", loa: "Life", status: "Active", effectiveDate: "Mar 1, 2021", expirationDate: "Dec 31, 2025" },
-    { state: "VA", licenseNumber: "VA4456789", loa: "Life", status: "Expired", effectiveDate: "Jun 1, 2018", expirationDate: "May 31, 2022" },
+    { state: "NC", licenseNumber: "NC1234567", loa: "Life",   status: "Active",  effectiveDate: "Jan 15, 2020", expirationDate: "Dec 31, 2025" },
+    { state: "NC", licenseNumber: "NC1234567", loa: "Health", status: "Active",  effectiveDate: "Jan 15, 2020", expirationDate: "Dec 31, 2025" },
+    { state: "SC", licenseNumber: "SC9876543", loa: "Life",   status: "Active",  effectiveDate: "Mar 1, 2021",  expirationDate: "Dec 31, 2025" },
+    { state: "VA", licenseNumber: "VA4456789", loa: "Life",   status: "Expired", effectiveDate: "Jun 1, 2018",  expirationDate: "May 31, 2022" },
+  ],
+  "5512984": [
+    { state: "TX", licenseNumber: "TX5512984", loa: "Life",   status: "Active",  effectiveDate: "Mar 1, 2022",  expirationDate: "Feb 28, 2026" },
+    { state: "TX", licenseNumber: "TX5512984", loa: "Health", status: "Active",  effectiveDate: "Mar 1, 2022",  expirationDate: "Feb 28, 2026" },
   ],
 };
 
 const MOCK_APPOINTMENTS: Record<string, Appointment[]> = {
   "8821033": [
-    { carrier: "Nationwide Life", loa: "Life", state: "NC", status: "Active", effectiveDate: "Feb 10, 2021" },
-    { carrier: "Nationwide Life", loa: "Health", state: "NC", status: "Active", effectiveDate: "Feb 10, 2021" },
-    { carrier: "Lincoln National", loa: "Life", state: "NC", status: "Terminated", effectiveDate: "Jan 1, 2020", terminationDate: "Jun 30, 2023" },
-    { carrier: "Principal Financial", loa: "Life", state: "SC", status: "Pending", effectiveDate: "Oct 1, 2024" },
+    { carrier: "Nationwide Life",     loa: "Life",   state: "NC", status: "Active",     effectiveDate: "Feb 10, 2021" },
+    { carrier: "Nationwide Life",     loa: "Health", state: "NC", status: "Active",     effectiveDate: "Feb 10, 2021" },
+    { carrier: "Lincoln National",    loa: "Life",   state: "NC", status: "Terminated", effectiveDate: "Jan 1, 2020",  terminationDate: "Jun 30, 2023" },
+    { carrier: "Principal Financial", loa: "Life",   state: "SC", status: "Pending",    effectiveDate: "Oct 1, 2024" },
+  ],
+  "5512984": [
+    { carrier: "Prudential Financial", loa: "Life",   state: "TX", status: "Active",  effectiveDate: "Apr 15, 2022" },
+    { carrier: "Aetna",                loa: "Health", state: "TX", status: "Pending", effectiveDate: "Jan 10, 2025" },
   ],
 };
 
 const MOCK_REGULATORY_ACTIONS: Record<string, RegulatoryAction[]> = {
-  // Most producers have no regulatory actions — intentionally sparse
   "8821033": [],
+  "5512984": [],
 };
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
@@ -143,31 +150,61 @@ function TaskStatusTag({ status }: { status: string }) {
   );
 }
 
-function TaskDetailPanel({ task, onAction }: {
+// ─── Task Detail Panel ────────────────────────────────────────────────────────
+
+function TaskDetailPanel({ task, onAction, isProducerView }: {
   task: Task;
   onAction: (patch: Partial<Task>) => void;
+  isProducerView: boolean;
 }) {
-  const [note, setNote] = useState("");
-  const canReject  = task.status === "Needs Approval";
-  const canReopen  = (task.status === "Done" || task.status === "Approved") && task.owner === "Producer";
-  const isDone     = task.status === "Done" || task.status === "Approved";
+  const [note,           setNote]           = useState("");
+  const [selectedAnswer, setSelectedAnswer] = useState<"Yes" | "No" | null>(null);
 
-  const primaryAction = (() => {
-    if (task.status === "Open")           return { label: task.required && task.owner === "Producer" ? "Submit for Approval" : "Mark Done", patch: { status: task.required && task.owner === "Producer" ? "Needs Approval" : "Done" } };
-    if (task.status === "Needs Approval") return { label: "Approve", patch: { status: "Approved" } };
-    if (task.status === "Rejected")       return { label: "Resubmit", patch: { status: "Open", rejectionNote: "" } };
-    return null;
-  })();
+  const isDone    = task.status === "Done" || task.status === "Approved";
+  const isOpen    = task.status === "Open";
+  const isWaiting = task.status === "Needs Approval";
+
+  // Whether this task has a yes/no disclosure question
+  const hasQuestion = !!task.question;
+
+  // Disclosure tasks (question field present) always Mark Complete — never route to approval.
+  // Producer view: always Mark Complete — producers never route to approval.
+  // OM view: required producer-owned tasks go to Needs Approval.
+  const isDisclosure = !!task.question;
+  const actionLabel  = (isProducerView || isDisclosure) ? "Mark Complete" : (task.required && task.owner === "Producer" ? "Submit for Approval" : "Mark Done");
+  const actionStatus = (isProducerView || isDisclosure) ? "Done"          : (task.required && task.owner === "Producer" ? "Needs Approval"      : "Done");
+
+  // Disable the primary action if question is unanswered
+  const primaryDisabled = isOpen && hasQuestion && selectedAnswer === null;
+
+  // OM-only actions
+  const canApprove = !isProducerView && isWaiting;
+  const canReject  = !isProducerView && isWaiting;
+  const canReopen  = !isProducerView && isDone && task.owner === "Producer";
+
+  const handlePrimary = () => {
+    if (!isOpen) return;
+    const patch: Partial<Task> = { status: actionStatus as Task["status"] };
+    // Persist the answer into the task's recorded answer field
+    if (hasQuestion && selectedAnswer !== null) {
+      patch.answer = selectedAnswer;
+    }
+    onAction(patch);
+    setSelectedAnswer(null);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, borderLeft: `1px solid ${C.border}` }}>
+
       {/* Panel header */}
       <div style={{ padding: "18px 20px", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8, lineHeight: 1.3 }}>{task.name}</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           <TaskStatusTag status={task.status} />
           <span style={{ fontSize: 11, color: C.muted, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 7px" }}>{task.type}</span>
-          <span style={{ fontSize: 11, color: C.muted }}>Owner: <span style={{ color: C.textMed, fontWeight: 500 }}>{task.owner}</span></span>
+          {!isProducerView && (
+            <span style={{ fontSize: 11, color: C.muted }}>Owner: <span style={{ color: C.textMed, fontWeight: 500 }}>{task.owner}</span></span>
+          )}
           <span style={{ fontSize: 11, color: task.required ? C.danger : C.muted }}>
             {task.required ? "Required" : "Optional"}
           </span>
@@ -176,6 +213,8 @@ function TaskDetailPanel({ task, onAction }: {
 
       {/* Scrollable body */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+
+        {/* Completion banner */}
         {isDone && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#ecfdf5", border: "1px solid #6ee7b7", borderRadius: 8, padding: "10px 14px", marginBottom: 20 }}>
             <span style={{ fontSize: 16 }}>✓</span>
@@ -183,20 +222,80 @@ function TaskDetailPanel({ task, onAction }: {
           </div>
         )}
 
+        {/* Waiting banner (producer view) */}
+        {isProducerView && isWaiting && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", marginBottom: 20 }}>
+            <span style={{ fontSize: 16 }}>⏳</span>
+            <span style={{ fontSize: 13, color: "#92400e", fontWeight: 500 }}>Submitted — your agency is reviewing this task.</span>
+          </div>
+        )}
+
+        {/* Rejection note */}
         {task.status === "Rejected" && task.rejectionNote && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "12px 14px", marginBottom: 20 }}>
-            <div style={{ fontSize: 11, color: C.danger, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600, marginBottom: 5 }}>Rejection Note</div>
+            <div style={{ fontSize: 11, color: C.danger, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600, marginBottom: 5 }}>
+              {isProducerView ? "Your agency left a note" : "Rejection Note"}
+            </div>
             <div style={{ fontSize: 13, color: "#991b1b", lineHeight: 1.6 }}>{task.rejectionNote}</div>
           </div>
         )}
 
-        <div>
-          <SectionLabel label="Task Instructions" />
+        {/* Task instructions */}
+        <div style={{ marginBottom: hasQuestion && isOpen ? 20 : 0 }}>
+          <SectionLabel label="Instructions" />
           <div style={{ fontSize: 14, color: C.textMed, lineHeight: 1.8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px" }}>
             {task.detail}
           </div>
         </div>
 
+        {/* Yes/No disclosure question — only shown when task is open */}
+        {hasQuestion && isOpen && (
+          <div style={{ marginTop: 20 }}>
+            <SectionLabel label="Your Response" />
+            <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 14px" }}>
+              <div style={{ fontSize: 14, color: C.text, fontWeight: 500, lineHeight: 1.6, marginBottom: 14 }}>
+                {task.question}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                {(["Yes", "No"] as const).map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => setSelectedAnswer(opt)}
+                    style={{
+                      flex: 1, padding: "9px 0",
+                      fontSize: 13, fontWeight: 600,
+                      borderRadius: 8, cursor: "pointer",
+                      border: `2px solid ${selectedAnswer === opt ? C.accent : C.border}`,
+                      background: selectedAnswer === opt ? C.accent + "12" : C.surface,
+                      color: selectedAnswer === opt ? C.accent : C.textMed,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              {selectedAnswer === "Yes" && task.yesWarning && (
+                <div style={{ marginTop: 12, fontSize: 13, color: C.warning, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 7, padding: "9px 12px", lineHeight: 1.6 }}>
+                  ⚠ {task.yesWarning}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Persisted answer — shown after task is done */}
+        {isDone && task.answer && (
+          <div style={{ marginTop: 20 }}>
+            <SectionLabel label="Your Response" />
+            <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>{task.question}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{task.answer}</div>
+            </div>
+          </div>
+        )}
+
+        {/* OM-only: rejection note input */}
         {canReject && (
           <div style={{ marginTop: 20 }}>
             <SectionLabel label="Rejection Note (optional)" />
@@ -210,8 +309,10 @@ function TaskDetailPanel({ task, onAction }: {
         )}
       </div>
 
-      {/* Panel footer actions */}
+      {/* Footer actions */}
       <div style={{ padding: "14px 20px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+
+        {/* OM-only actions */}
         {canReopen && (
           <button onClick={() => onAction({ status: "Open" })}
             style={{ fontSize: 13, fontWeight: 500, color: C.textMed, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
@@ -224,10 +325,35 @@ function TaskDetailPanel({ task, onAction }: {
             Reject
           </button>
         )}
-        {primaryAction && (
-          <button onClick={() => onAction(primaryAction.patch as Partial<Task>)}
+        {canApprove && (
+          <button onClick={() => onAction({ status: "Approved" })}
+            style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: C.success, border: "none", borderRadius: 8, padding: "7px 18px", cursor: "pointer" }}>
+            Approve
+          </button>
+        )}
+
+        {/* Resubmit after rejection */}
+        {task.status === "Rejected" && (
+          <button onClick={() => onAction({ status: "Open", rejectionNote: "" })}
             style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: C.accent, border: "none", borderRadius: 8, padding: "7px 18px", cursor: "pointer" }}>
-            {primaryAction.label}
+            Resubmit
+          </button>
+        )}
+
+        {/* Primary action — open tasks only */}
+        {isOpen && (
+          <button
+            onClick={handlePrimary}
+            disabled={primaryDisabled}
+            style={{
+              fontSize: 13, fontWeight: 600, color: "#fff",
+              background: primaryDisabled ? C.muted : C.accent,
+              border: "none", borderRadius: 8, padding: "7px 18px",
+              cursor: primaryDisabled ? "not-allowed" : "pointer",
+              opacity: primaryDisabled ? 0.6 : 1,
+              transition: "opacity 0.15s",
+            }}>
+            {actionLabel}
           </button>
         )}
       </div>
@@ -235,7 +361,13 @@ function TaskDetailPanel({ task, onAction }: {
   );
 }
 
-function TasksTab({ tasks, onUpdateTask }: { tasks: Task[]; onUpdateTask: (id: string, patch: Partial<Task>) => void }) {
+// ─── Tasks Tab ────────────────────────────────────────────────────────────────
+
+function TasksTab({ tasks, onUpdateTask, isProducerView }: {
+  tasks: Task[];
+  onUpdateTask: (id: string, patch: Partial<Task>) => void;
+  isProducerView: boolean;
+}) {
   const [search,     setSearch]     = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -250,8 +382,15 @@ function TasksTab({ tasks, onUpdateTask }: { tasks: Task[]; onUpdateTask: (id: s
     );
   }, [tasks, search]);
 
+  // Producer view: only show tasks they own or need to act on
+  const visibleTasks = isProducerView
+    ? filtered.filter(t => t.owner === "Producer")
+    : filtered;
+
   const selectedTask = selectedId ? tasks.find(t => t.id === selectedId) || null : null;
   const done = tasks.filter(t => t.status === "Done" || t.status === "Approved").length;
+  const producerTotal = isProducerView ? tasks.filter(t => t.owner === "Producer").length : tasks.length;
+  const producerDone  = isProducerView ? tasks.filter(t => t.owner === "Producer" && (t.status === "Done" || t.status === "Approved")).length : done;
 
   return (
     <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
@@ -260,26 +399,27 @@ function TasksTab({ tasks, onUpdateTask }: { tasks: Task[]; onUpdateTask: (id: s
 
         {/* Toolbar */}
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, alignItems: "center", background: C.surface }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, status, owner, or type…"
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder={isProducerView ? "Search tasks…" : "Search by name, status, owner, or type…"}
             style={{ flex: 1, fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 12px", outline: "none", background: C.bg, color: C.text, fontFamily: "inherit" }}
             onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.border}
           />
-          <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{done} of {tasks.length} complete</span>
+          <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{producerDone} of {producerTotal} complete</span>
         </div>
 
         {/* Progress bar */}
         <div style={{ padding: "10px 20px 0", background: C.surface }}>
           <div style={{ background: C.border, borderRadius: 99, height: 5 }}>
-            <div style={{ width: `${tasks.length ? (done / tasks.length) * 100 : 0}%`, background: C.success, borderRadius: 99, height: 5, transition: "width .4s" }} />
+            <div style={{ width: `${producerTotal ? (producerDone / producerTotal) * 100 : 0}%`, background: C.success, borderRadius: 99, height: 5, transition: "width .4s" }} />
           </div>
         </div>
 
         {/* Task rows */}
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6, background: C.surface }}>
-          {filtered.length === 0 && (
+          {visibleTasks.length === 0 && (
             <EmptyState icon="✓" message="No tasks match your filters." />
           )}
-          {filtered.map(t => {
+          {visibleTasks.map(t => {
             const isSelected = selectedId === t.id;
             const isDone = t.status === "Done" || t.status === "Approved";
             return (
@@ -294,7 +434,6 @@ function TasksTab({ tasks, onUpdateTask }: { tasks: Task[]; onUpdateTask: (id: s
                 onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.borderColor = C.accent; }}
                 onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.borderColor = C.border; }}>
 
-                {/* Done check */}
                 <div style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${isDone ? C.success : C.border}`, background: isDone ? C.success : "transparent", flexShrink: 0, marginTop: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   {isDone && <span style={{ fontSize: 10, color: "#fff", fontWeight: 700 }}>✓</span>}
                 </div>
@@ -306,7 +445,7 @@ function TasksTab({ tasks, onUpdateTask }: { tasks: Task[]; onUpdateTask: (id: s
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <span style={{ fontSize: 11, color: C.muted, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "1px 6px" }}>{t.type}</span>
-                    <span style={{ fontSize: 11, color: C.muted }}>Owner: {t.owner}</span>
+                    {!isProducerView && <span style={{ fontSize: 11, color: C.muted }}>Owner: {t.owner}</span>}
                     {t.required && <span style={{ fontSize: 11, color: C.danger }}>Required</span>}
                   </div>
                   {t.status === "Rejected" && t.rejectionNote && (
@@ -329,6 +468,7 @@ function TasksTab({ tasks, onUpdateTask }: { tasks: Task[]; onUpdateTask: (id: s
           <TaskDetailPanel
             task={selectedTask}
             onAction={patch => onUpdateTask(selectedTask.id, patch)}
+            isProducerView={isProducerView}
           />
         </div>
       )}
@@ -341,19 +481,16 @@ function TasksTab({ tasks, onUpdateTask }: { tasks: Task[]; onUpdateTask: (id: s
 function DetailsTab({ producer }: { producer: Producer }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", gap: 28 }}>
-      {/* Left column */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
           <SectionLabel label="Producer Identity" />
           <FieldRow label="Full Name" value={producer.name} />
           <FieldRow label="National Producer Number (NPN)" value={producer.npn} />
           <FieldRow label="Resident State" value={producer.resident} />
-          {/* These fields would come from expanded producer data — shown as placeholders if absent */}
           <FieldRow label="Email Address" value={(producer as any).email || null} />
           <FieldRow label="Phone Number" value={(producer as any).phone || null} />
           <FieldRow label="Date of Birth" value={(producer as any).dob || null} />
         </div>
-
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px" }}>
           <SectionLabel label="Licensing" />
           <FieldRow label="Resident License Number" value={(producer as any).residentLicense || null} />
@@ -361,8 +498,6 @@ function DetailsTab({ producer }: { producer: Producer }) {
           <FieldRow label="Lines of Authority" value={(producer as any).loas?.join(", ") || null} />
         </div>
       </div>
-
-      {/* Right column */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
           <SectionLabel label="Onboarding" />
@@ -371,7 +506,6 @@ function DetailsTab({ producer }: { producer: Producer }) {
           <FieldRow label="Invited" value={producer.invited} />
           <FieldRow label="Last Activity" value={producer.lastTask} />
         </div>
-
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
           <SectionLabel label="E&O Coverage" />
           <FieldRow label="E&O Carrier" value={(producer as any).eoCarrier || null} />
@@ -379,7 +513,6 @@ function DetailsTab({ producer }: { producer: Producer }) {
           <FieldRow label="Coverage Amount" value={(producer as any).eoCoverage || null} />
           <FieldRow label="Expiration Date" value={(producer as any).eoExpiration || null} />
         </div>
-
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px" }}>
           <SectionLabel label="Task Summary" />
           {(() => {
@@ -404,16 +537,10 @@ function DetailsTab({ producer }: { producer: Producer }) {
 
 function LicensesTab({ npn }: { npn: string }) {
   const licenses = MOCK_LICENSES[npn] || [];
-
-  if (licenses.length === 0) {
-    return <EmptyState icon="📋" message="No license records found for this producer in NIPR." />;
-  }
-
+  if (licenses.length === 0) return <EmptyState icon="📋" message="No license records found for this producer in NIPR." />;
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-      <div style={{ marginBottom: 12, fontSize: 12, color: C.muted }}>
-        {licenses.length} license record{licenses.length !== 1 ? "s" : ""} · Source: NIPR
-      </div>
+      <div style={{ marginBottom: 12, fontSize: 12, color: C.muted }}>{licenses.length} license record{licenses.length !== 1 ? "s" : ""} · Source: NIPR</div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ background: C.bg }}>
@@ -445,16 +572,10 @@ function LicensesTab({ npn }: { npn: string }) {
 
 function AppointmentsTab({ npn }: { npn: string }) {
   const appointments = MOCK_APPOINTMENTS[npn] || [];
-
-  if (appointments.length === 0) {
-    return <EmptyState icon="🤝" message="No appointment records found for this producer in NIPR." />;
-  }
-
+  if (appointments.length === 0) return <EmptyState icon="🤝" message="No appointment records found for this producer in NIPR." />;
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-      <div style={{ marginBottom: 12, fontSize: 12, color: C.muted }}>
-        {appointments.length} appointment record{appointments.length !== 1 ? "s" : ""} · Source: NIPR
-      </div>
+      <div style={{ marginBottom: 12, fontSize: 12, color: C.muted }}>{appointments.length} appointment record{appointments.length !== 1 ? "s" : ""} · Source: NIPR</div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ background: C.bg }}>
@@ -486,7 +607,6 @@ function AppointmentsTab({ npn }: { npn: string }) {
 
 function RegulatoryActionsTab({ npn }: { npn: string }) {
   const actions = MOCK_REGULATORY_ACTIONS[npn] || [];
-
   if (actions.length === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 12 }}>
@@ -498,7 +618,6 @@ function RegulatoryActionsTab({ npn }: { npn: string }) {
       </div>
     );
   }
-
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
       <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
@@ -525,34 +644,36 @@ function RegulatoryActionsTab({ npn }: { npn: string }) {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-function ProducerHeader({ producer }: { producer: Producer }) {
+function ProducerHeader({ producer, isProducerView }: { producer: Producer; isProducerView: boolean }) {
   const tasks = producer.tasks;
-  const done = tasks.filter(t => t.status === "Done" || t.status === "Approved").length;
-  const pct  = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
-  const blocked = tasks.filter(t => t.status === "Rejected" || t.status === "Needs Approval").length;
+  const producerTasks = isProducerView ? tasks.filter(t => t.owner === "Producer") : tasks;
+  const done    = producerTasks.filter(t => t.status === "Done" || t.status === "Approved").length;
+  const pct     = producerTasks.length ? Math.round((done / producerTasks.length) * 100) : 0;
+  const blocked = producerTasks.filter(t => t.status === "Rejected" || t.status === "Needs Approval").length;
 
   return (
     <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "20px 28px", flexShrink: 0 }}>
-      {/* Name + badges */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>{producer.name}</h2>
         <Badge label={producer.status} />
-        <Badge label={producer.classification} />
+        {!isProducerView && <Badge label={producer.classification} />}
         {blocked > 0 && (
           <span style={{ fontSize: 12, fontWeight: 600, background: "#fef2f2", color: C.danger, borderRadius: 6, padding: "3px 9px" }}>
-            {blocked} task{blocked > 1 ? "s" : ""} need attention
+            {blocked} task{blocked > 1 ? "s" : ""} need{blocked === 1 ? "s" : ""} attention
           </span>
         )}
       </div>
-
-      {/* Metadata cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-        {([
-          ["NPN",             producer.npn],
-          ["Resident State",  producer.resident],
-          ["Invited",         producer.invited],
-          ["Last Activity",   producer.lastTask || "—"],
-          ["Task Progress",   `${done} / ${tasks.length} (${pct}%)`],
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${isProducerView ? 3 : 5}, 1fr)`, gap: 10 }}>
+        {(isProducerView ? [
+          ["NPN",            producer.npn],
+          ["Resident State", producer.resident],
+          ["Task Progress",  `${done} / ${producerTasks.length} (${pct}%)`],
+        ] : [
+          ["NPN",            producer.npn],
+          ["Resident State", producer.resident],
+          ["Invited",        producer.invited],
+          ["Last Activity",  producer.lastTask || "—"],
+          ["Task Progress",  `${done} / ${producerTasks.length} (${pct}%)`],
         ] as [string, string][]).map(([l, v]) => (
           <div key={l} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}>
             <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3, fontWeight: 500 }}>{l}</div>
@@ -566,27 +687,25 @@ function ProducerHeader({ producer }: { producer: Producer }) {
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
-export function ProducerDetail({ producer: init, onBack, allProducers, setAllProducers }: {
+export function ProducerDetail({ producer: init, onBack, allProducers, setAllProducers, isProducerView = false }: {
   producer: Producer;
   onBack: () => void;
   allProducers: Producer[];
   setAllProducers: (fn: (prev: Producer[]) => Producer[]) => void;
+  isProducerView?: boolean;
 }) {
   const version  = useVersion();
   const producer = allProducers.find(p => p.id === init.id) || init;
-  const hasNpn   = !!producer.npn;
+  const hasNpn = true;
 
-  // Build tab list — NIPR tabs only if producer has an NPN
   const tabs = [
-    { id: "tasks",   label: "Tasks" },
-    { id: "details", label: "Details" },
-    ...(hasNpn ? [
-      { id: "licenses",     label: "Licenses" },
-      { id: "appointments", label: "Appointments" },
-      { id: "regulatory",   label: "Regulatory Actions" },
-    ] : []),
-    ...((version === "post-mvp" || version === "ai") ? [{ id: "activity", label: "Activity Log" }] : []),
-  ];
+  { id: "tasks",   label: "Tasks" },
+  { id: "details", label: "Details" },
+  { id: "licenses",     label: "Licenses" },
+  { id: "appointments", label: "Appointments" },
+  { id: "regulatory",   label: "Regulatory Actions" },
+  ...((version === "post-mvp" || version === "ai") ? [{ id: "activity", label: "Activity Log" }] : []),
+];
 
   const [activeTab, setActiveTab] = useState("tasks");
 
@@ -608,39 +727,38 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       {/* Back nav */}
-      <div style={{ padding: "12px 28px 0", flexShrink: 0 }}>
-        <button onClick={onBack}
-          style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}>
-          ← Back to Producers
-        </button>
-      </div>
+      {!isProducerView && (
+        <div style={{ padding: "12px 28px 0", flexShrink: 0 }}>
+          <button onClick={onBack}
+            style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}>
+            ← Back to Producers
+          </button>
+        </div>
+      )}
 
-      {/* Header */}
-      <ProducerHeader producer={producer} />
+      <ProducerHeader producer={producer} isProducerView={isProducerView} />
 
-      {/* Tab bar */}
       <div style={{ padding: "0 28px", background: C.surface, flexShrink: 0 }}>
         <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} />
       </div>
 
-      {/* Tab content — fills remaining height */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {activeTab === "tasks" && (
-          <TasksTab tasks={producer.tasks} onUpdateTask={updateTask} />
+          <TasksTab tasks={producer.tasks} onUpdateTask={updateTask} isProducerView={isProducerView} />
         )}
         {activeTab === "details" && (
-          <DetailsTab producer={producer} />
-        )}
-        {activeTab === "licenses" && hasNpn && (
-          <LicensesTab npn={producer.npn} />
-        )}
-        {activeTab === "appointments" && hasNpn && (
-          <AppointmentsTab npn={producer.npn} />
-        )}
-        {activeTab === "regulatory" && hasNpn && (
-          <RegulatoryActionsTab npn={producer.npn} />
-        )}
-        {activeTab === "activity" && (version === "post-mvp" || version === "ai") && (
+            <DetailsTab producer={producer} />
+            )}
+            {activeTab === "licenses" && (
+            <LicensesTab npn={producer.npn} />
+            )}
+            {activeTab === "appointments" && (
+            <AppointmentsTab npn={producer.npn} />
+            )}
+            {activeTab === "regulatory" && (
+            <RegulatoryActionsTab npn={producer.npn} />
+            )}
+        {activeTab === "activity" && (version === "post-mvp" || version === "ai") && !isProducerView && (
           <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
             <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 16 }}>Activity Log</div>

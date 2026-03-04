@@ -11,7 +11,7 @@ import { BottomBar } from "../components/BottomBar";
 import { InviteDrawer, BulkInviteDrawer } from "../components/InviteDrawers";
 
 const PROD_FILTER_DEFS: FilterDef[] = [
-  { key: "classification", label: "Classification", options: ["Needs License", "Needs LOAs", "Reg Tasks Only", "Org Requirements"] },
+  { key: "classification", label: "Readiness", options: ["Needs License", "Needs LOAs", "Reg Tasks Only", "Org Requirements"] },
   { key: "status",         label: "Status",         options: ["Invited", "In Progress", "Waiting/Blocked", "Completed", "Terminated"] },
   { key: "resident",       label: "Resident State", options: ["AZ","CA","CO","FL","GA","IL","MI","MN","NC","NJ","NY","OH","PA","TN","TX","WA"] },
 ];
@@ -19,7 +19,7 @@ const PROD_FILTER_DEFS: FilterDef[] = [
 const ALL_COLS: ColDef<Producer>[] = [
   { key: "name",           label: "Producer",       render: (v) => <span style={{ color: C.accentLight, fontWeight: 500 }}>{v}</span> },
   { key: "npn",            label: "NPN" },
-  { key: "classification", label: "Classification", render: (v) => <Badge label={v} /> },
+  { key: "classification",      label: "classification", render: (v) => <Badge label={v} />, hidden: true },
   { key: "status",         label: "Status",         render: (v) => <Badge label={v} /> },
   { key: "resident",       label: "State" },
   { key: "invited",        label: "Invited",        noSearch: true },

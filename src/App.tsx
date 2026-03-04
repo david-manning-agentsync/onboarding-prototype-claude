@@ -12,6 +12,7 @@ import { ProducersView } from "./views/Producers";
 import { TasksView } from "./views/Tasks";
 import { PolicySets as PolicySetsView } from "./views/PolicySets";
 import { ProducerDetail } from "./views/ProducerDetail";
+import { ProducerShell } from "./components/ProducerShell";
 
 // ─── Launcher ─────────────────────────────────────────────────────────────────
 function Launcher({ onSelect }: { onSelect: (v: string) => void }) {
@@ -56,7 +57,7 @@ function Launcher({ onSelect }: { onSelect: (v: string) => void }) {
                 <div key={f} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <span style={{ color: v.id === "ai" ? C.ai : C.accent, fontSize: 13, marginTop: 1 }}>{v.id === "ai" ? "✦" : "✓"}</span>
                   <span style={{ fontSize: 13, color: C.textMed }}>{f}</span>
-                </div>  
+                </div>
               ))}
             </div>
             <button onClick={() => onSelect(v.id)} style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: `1px solid ${v.id === "ai" ? C.ai : C.accent}`, background: v.id === "ai" ? C.ai : C.accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
@@ -149,6 +150,8 @@ function App({ version: initialVersion, onExit }: { version: string; onExit: () 
   const [personaId,    setPersonaId]    = useState<PersonaId>("manager");
   const [version,      setVersion]      = useState<VersionId>(initialVersion as VersionId);
 
+  const jordanSmith = allProducers.find(p => p.name === "Jordan Smith")!;
+
   const navTo = (id: string, f?: Record<string, string[]>) => {
     setNav(id);
     setFilter(f || {});
@@ -160,8 +163,7 @@ function App({ version: initialVersion, onExit }: { version: string; onExit: () 
     setFilter({});
     setDetailState(null);
     setNav("dashboard");
-    const hasAdmin = id === "sysadmin";
-    if (!hasAdmin && mode === "system") setMode("product");
+    if (id !== "sysadmin" && mode === "system") setMode("product");
   };
 
   const handleSaveView   = (v: SavedView) => setSavedViews(prev => [...prev, v]);
@@ -176,6 +178,25 @@ function App({ version: initialVersion, onExit }: { version: string; onExit: () 
     onExit,
   };
 
+  // ─── Producer persona — no sidebar, dedicated shell ───────────────────────
+  if (personaId === "producer") {
+    return (
+      <VersionCtx.Provider value={version}>
+        <ProducerShell
+          producer={jordanSmith}
+          allProducers={allProducers}
+          setAllProducers={setAllProducers}
+          personaId={personaId}
+          version={version}
+          onPersonaChange={(id) => handlePersonaChange(id as PersonaId)}
+          onVersionChange={(id) => setVersion(id as VersionId)}
+          onExit={onExit}
+        />
+      </VersionCtx.Provider>
+    );
+  }
+
+  // ─── Manager / Sysadmin — sidebar layout ─────────────────────────────────
   return (
     <VersionCtx.Provider value={version}>
       <div style={{ display: "flex", height: "100vh", background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", color: C.text, overflow: "hidden" }}>
@@ -202,16 +223,20 @@ function App({ version: initialVersion, onExit }: { version: string; onExit: () 
         {mode === "product" ? (
           <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
             {detailState ? (
-              <ProducerDetail producer={detailState.producer} onBack={() => setDetailState(null)} allProducers={allProducers} setAllProducers={setAllProducers} />
+              <ProducerDetail
+                producer={detailState.producer}
+                onBack={() => setDetailState(null)}
+                allProducers={allProducers}
+                setAllProducers={setAllProducers}
+              />
             ) : (
               <>
-                {nav === "dashboard" && <Dashboard setNav={id => navTo(id)} setFilter={(f, dest) => navTo(dest || "producers", f)} producers={allProducers} />}
+                {nav === "dashboard"   && <Dashboard setNav={id => navTo(id)} setFilter={(f, dest) => navTo(dest || "producers", f)} producers={allProducers} />}
                 {nav === "producers"   && <ProducersView initFilter={filter} setDetailState={s => setDetailState(s)} producers={allProducers} setAllProducers={setAllProducers} onSaveView={handleSaveView} />}
-                {nav === "tasks" && personaId !== "producer" && <TasksView producers={allProducers} setAllProducers={setAllProducers} initFilter={filter} onSaveView={handleSaveView} />}
+                {nav === "tasks"       && <TasksView producers={allProducers} setAllProducers={setAllProducers} initFilter={filter} onSaveView={handleSaveView} />}
                 {nav === "policy-sets" && <PolicySetsView />}
                 {nav === "admin"       && <ComingSoon icon="⚙" title="Admin" desc="Users, roles, integrations, and org settings will live here." />}
                 {nav === "profile"     && <ComingSoon icon="👤" title="Profile" desc="This section will allow you to view and update your profile information." />}
-                {nav === "tasks" && personaId === "producer" && <ComingSoon icon="✓" title="Tasks" desc="This section will display your assigned onboarding tasks." />}
               </>
             )}
           </div>
