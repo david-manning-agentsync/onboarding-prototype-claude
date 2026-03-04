@@ -80,8 +80,12 @@ export function TasksView({ producers, setAllProducers, initFilter, onSaveView }
   const [pendingAction, setPendingAction] = useState<AIChatAction | null>(null);
 
   useEffect(() => {
-    if (initFilter && Object.keys(initFilter).length > 0) { setApplied(initFilter); }
-  }, [initFilter]);
+  if (initFilter && Object.keys(initFilter).length > 0) {
+    setApplied(initFilter);
+  } else {
+    setApplied({});
+  }
+}, [JSON.stringify(initFilter)]);
 
   const allTasks = useMemo(() => producers.flatMap(p =>
     p.tasks.map(t => ({ ...t, producerId: p.id, producerName: p.name, producerNPN: p.npn, classification: p.classification, producerStatus: p.status }))

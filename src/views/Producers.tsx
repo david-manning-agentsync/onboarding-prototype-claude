@@ -8,7 +8,6 @@ import { SaveViewModal } from "../components/SaveViewModal";
 import { AIChat } from "../components/AIChat";
 import type { AIChatMessage, AIChatAction } from "../components/AIChat";
 import { BottomBar } from "../components/BottomBar";
-import { TaskDrawer } from "../components/TaskDrawer";
 import { InviteDrawer, BulkInviteDrawer } from "../components/InviteDrawers";
 
 const PROD_FILTER_DEFS: FilterDef[] = [
@@ -17,7 +16,6 @@ const PROD_FILTER_DEFS: FilterDef[] = [
   { key: "resident",       label: "Resident State", options: ["AZ","CA","CO","FL","GA","IL","MI","MN","NC","NJ","NY","OH","PA","TN","TX","WA"] },
 ];
 
-// invited and lastTask are date/activity metadata — excluded from search
 const ALL_COLS: ColDef<Producer>[] = [
   { key: "name",           label: "Producer",       render: (v) => <span style={{ color: C.accentLight, fontWeight: 500 }}>{v}</span> },
   { key: "npn",            label: "NPN" },
@@ -57,129 +55,6 @@ summary should be a short human-readable explanation.`,
   return JSON.parse(txt.replace(/```json|```/g, "").trim());
 }
 
-// ─── Producer Detail ──────────────────────────────────────────────────────────
-
-export function ProducerDetail({ producer: init, onBack, allProducers, setAllProducers }: {
-  producer: Producer;
-  onBack: () => void;
-  allProducers: Producer[];
-  setAllProducers: (fn: (prev: Producer[]) => Producer[]) => void;
-}) {
-  const version = useVersion();
-  const producer = allProducers.find(p => p.id === init.id) || init;
-  const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("tasks");
-
-  const updateTask = (taskId: string, patch: Record<string, any>) => {
-    setAllProducers(prev => prev.map(p => p.id === producer.id ? {
-      ...p,
-      tasks: p.tasks.map(t => t.id === taskId ? { ...t, ...patch } : t),
-      activityLog: patch.status ? [{
-        date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-        event: `Task ${patch.status === "Rejected" ? "rejected" : patch.status === "Approved" ? "approved" : "updated"}`,
-        detail: `${p.tasks.find(t => t.id === taskId)?.name} → ${patch.status}`,
-      }, ...p.activityLog] : p.activityLog,
-    } : p));
-  };
-
-  const tasks = producer.tasks;
-  const done = tasks.filter(t => t.status === "Done" || t.status === "Approved").length;
-  const drawerTask = drawerTaskId ? tasks.find(t => t.id === drawerTaskId) || null : null;
-  const drawerIdx = drawerTaskId ? tasks.findIndex(t => t.id === drawerTaskId) : -1;
-  const tabs = [{ id: "tasks", label: "Tasks" }, ...((version === "post-mvp" || version === "ai") ? [{ id: "activity", label: "Activity Log" }] : [])];
-
-  return (
-    <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={onBack} style={{ background: "none", border: "none", color: C.accentLight, cursor: "pointer", fontSize: 13, padding: 0, fontWeight: 500 }}>← Back</button>
-          <span style={{ color: C.border }}>|</span>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.text }}>{producer.name}</h2>
-          <Badge label={producer.status} /><Badge label={producer.classification} />
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-          {([["NPN", producer.npn], ["Resident State", producer.resident], ["Invited", producer.invited], ["Last Activity", producer.lastTask]] as [string, string][]).map(([l, v]) => (
-            <div key={l} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{l}</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{v}</div>
-            </div>
-          ))}
-        </div>
-        {tabs.length > 1 && (
-          <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.border}` }}>
-            {tabs.map(t => (
-              <button key={t.id} onClick={() => setActiveTab(t.id)}
-                style={{ fontSize: 13, fontWeight: activeTab === t.id ? 600 : 500, color: activeTab === t.id ? C.accent : C.muted, background: "none", border: "none", borderBottom: `2px solid ${activeTab === t.id ? C.accent : "transparent"}`, padding: "8px 16px", cursor: "pointer", marginBottom: -1 }}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {activeTab === "tasks" && (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Task List</div>
-              <div style={{ fontSize: 12, color: C.muted }}>{done} of {tasks.length} complete</div>
-            </div>
-            <div style={{ background: C.border, borderRadius: 99, height: 6, marginBottom: 12 }}>
-              <div style={{ width: `${tasks.length ? (done / tasks.length) * 100 : 0}%`, background: C.accent, borderRadius: 99, height: 6, transition: "width .4s" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {tasks.map(t => (
-                <div key={t.id} onClick={() => setDrawerTaskId(t.id)}
-                  style={{ background: drawerTaskId === t.id ? C.accentBg : C.bg, border: `1px solid ${drawerTaskId === t.id ? C.accent : C.border}`, borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}
-                  onMouseEnter={e => { if (drawerTaskId !== t.id) (e.currentTarget as HTMLElement).style.borderColor = C.accent; }}
-                  onMouseLeave={e => { if (drawerTaskId !== t.id) (e.currentTarget as HTMLElement).style.borderColor = C.border; }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: C.accentLight }}>{t.name}</span>
-                      <Badge label={t.status} small />
-                      <span style={{ fontSize: 11, color: C.muted, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "1px 6px" }}>{t.type}</span>
-                      {t.owner === "Customer" && <span style={{ fontSize: 11, color: C.accentLight, background: C.accentBg, borderRadius: 4, padding: "1px 6px" }}>Customer-owned</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: C.textDim, marginTop: 3 }}>{t.detail}</div>
-                    {t.status === "Rejected" && t.rejectionNote && <div style={{ fontSize: 12, color: C.danger, marginTop: 4, background: "#fef2f2", borderRadius: 6, padding: "4px 8px", display: "inline-block" }}>↳ {t.rejectionNote}</div>}
-                  </div>
-                  <span style={{ fontSize: 12, color: C.muted }}>→</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {activeTab === "activity" && (version === "post-mvp" || version === "ai") && (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 16 }}>Activity Log</div>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {producer.activityLog.map((entry, i) => (
-                <div key={i} style={{ display: "flex", gap: 14, paddingBottom: i < producer.activityLog.length - 1 ? 16 : 0 }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.accent, border: `2px solid ${C.accentBg}`, marginTop: 3 }} />
-                    {i < producer.activityLog.length - 1 && <div style={{ width: 2, flex: 1, background: C.border, marginTop: 4 }} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{entry.event}</span>
-                      <span style={{ fontSize: 11, color: C.muted }}>{entry.date}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: C.textDim }}>{entry.detail}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-      <TaskDrawer
-        task={drawerTask} producer={producer}
-        onClose={() => setDrawerTaskId(null)}
-        onUpdate={patch => updateTask(drawerTaskId!, patch)}
-        hasPrev={drawerIdx > 0} hasNext={drawerIdx < tasks.length - 1}
-        onPrev={() => setDrawerTaskId(tasks[drawerIdx - 1].id)}
-        onNext={() => setDrawerTaskId(tasks[drawerIdx + 1].id)} />
-    </>
-  );
-}
-
 // ─── Producers View ───────────────────────────────────────────────────────────
 
 export function ProducersView({ initFilter, setDetailState, producers, setAllProducers, onSaveView }: {
@@ -215,7 +90,6 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
     if (initFilter && Object.keys(initFilter).length > 0) { setApplied(initFilter); }
   }, [initFilter]);
 
-  // Search is handled by TableView — views only need to apply filter logic
   const filteredRows = useMemo(() => producers.filter(p =>
     (!applied.classification?.length || applied.classification.includes(p.classification))
     && (!applied.status?.length      || applied.status.includes(p.status))
@@ -262,7 +136,6 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
   const showActionBar = isPlus && selCount > 0 && !aiOpen;
   const bottomPad     = (aiOpen || showActionBar) ? 72 : 24;
 
-  // Invite menu — kept as a custom primaryAction since it has a split-button dropdown
   const inviteAction = (
     <div ref={inviteMenuRef} style={{ position: "relative" }}>
       <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.accent}` }}>

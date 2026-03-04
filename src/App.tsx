@@ -8,9 +8,10 @@ import { SystemSidebar } from "./components/SystemSidebar";
 import type { PersonaId, VersionId } from "./components/Sidebar";
 import type { SystemNavId } from "./components/SystemSidebar";
 import { Dashboard } from "./views/Dashboard";
-import { ProducersView, ProducerDetail } from "./views/Producers";
+import { ProducersView } from "./views/Producers";
 import { TasksView } from "./views/Tasks";
 import { PolicySets as PolicySetsView } from "./views/PolicySets";
+import { ProducerDetail } from "./views/ProducerDetail";
 
 // ─── Launcher ─────────────────────────────────────────────────────────────────
 function Launcher({ onSelect }: { onSelect: (v: string) => void }) {
@@ -55,7 +56,7 @@ function Launcher({ onSelect }: { onSelect: (v: string) => void }) {
                 <div key={f} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <span style={{ color: v.id === "ai" ? C.ai : C.accent, fontSize: 13, marginTop: 1 }}>{v.id === "ai" ? "✦" : "✓"}</span>
                   <span style={{ fontSize: 13, color: C.textMed }}>{f}</span>
-                </div>
+                </div>  
               ))}
             </div>
             <button onClick={() => onSelect(v.id)} style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: `1px solid ${v.id === "ai" ? C.ai : C.accent}`, background: v.id === "ai" ? C.ai : C.accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
@@ -204,7 +205,7 @@ function App({ version: initialVersion, onExit }: { version: string; onExit: () 
               <ProducerDetail producer={detailState.producer} onBack={() => setDetailState(null)} allProducers={allProducers} setAllProducers={setAllProducers} />
             ) : (
               <>
-                {nav === "dashboard"   && <Dashboard setNav={id => navTo(id)} setFilter={f => navTo("producers", f)} producers={allProducers} />}
+                {nav === "dashboard" && <Dashboard setNav={id => navTo(id)} setFilter={(f, dest) => navTo(dest || "producers", f)} producers={allProducers} />}
                 {nav === "producers"   && <ProducersView initFilter={filter} setDetailState={s => setDetailState(s)} producers={allProducers} setAllProducers={setAllProducers} onSaveView={handleSaveView} />}
                 {nav === "tasks" && personaId !== "producer" && <TasksView producers={allProducers} setAllProducers={setAllProducers} initFilter={filter} onSaveView={handleSaveView} />}
                 {nav === "policy-sets" && <PolicySetsView />}

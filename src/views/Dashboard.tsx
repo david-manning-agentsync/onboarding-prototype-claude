@@ -46,7 +46,7 @@ function HorizBar({ data, total, onFilter }: {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export function Dashboard({ setNav, setFilter, producers }: {
   setNav: (id: string) => void;
-  setFilter: (f: Record<string, string[]>) => void;
+  setFilter: (f: Record<string, string[]>, dest?: string) => void;
   producers: Producer[];
 }) {
   const [tf, setTf] = useState("Last 30 days");
@@ -92,7 +92,7 @@ export function Dashboard({ setNav, setFilter, producers }: {
               View {card.nav} →
             </button>
           </div>
-          <HorizBar data={card.data} total={card.total} onFilter={f => { setFilter({ [card.filterKey]: [f] }); setNav(card.nav); }} />
+          <HorizBar data={card.data} total={card.total} onFilter={f => setFilter({ [card.filterKey]: [f] }, card.nav)} />
           <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.borderLight}`, fontSize: 12, color: C.muted }}>
             {card.foot}
           </div>
