@@ -196,7 +196,7 @@ export function Table<T extends { id: any }>({
 // TableView handles search matching internally across all visible columns.
 
 export function TableView<T extends { id: any }>({
-  title, subtitle,
+  title, subtitle: _subtitle,
   allCols, rows, totalCount, recordLabel = "records",
   filterDefs = [],
   search, onSearch,
