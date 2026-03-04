@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { Drawer } from "./Drawer";
-
-// ─── Theme ────────────────────────────────────────────────────────────────────
 import { C } from "../theme";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TaskType = "internal" | "external";
-type OwnerType = "producer" | "internal";
-type ApprovalType = "yes" | "no";
-type ComponentType = "text" | "video" | "file" | "freetext" | "picklist" | "boolean" | "fileupload" | "signature";
-type TabType = "selected" | "unselected" | "all";
+type TaskType       = "internal" | "external";
+type OwnerType      = "producer" | "internal";
+type ApprovalType   = "yes" | "no";
+type ComponentType  = "text" | "video" | "file" | "freetext" | "picklist" | "boolean" | "fileupload" | "signature" | "bankaccount";
+type TabType        = "selected" | "unselected" | "all";
+type AllocMode = "percentage" | "fixed";
 
 interface ComponentConfig {
   label?: string;
@@ -26,6 +25,15 @@ interface ComponentConfig {
   instructions?: string;
   prompt?: string;
   signerRole?: string;
+  // Bank account config
+  allowMultiple?: boolean;
+  requireAllocation?: boolean;
+  allocMode?: AllocMode;
+  allowedAccountTypes?: "both" | "checking" | "savings";
+  requireAccountHolder?: boolean;
+  requireBankName?: boolean;
+  requireRouting?: boolean;
+  requireAccountNumber?: boolean;
 }
 
 interface TaskComponent {
@@ -44,26 +52,20 @@ interface Task {
 }
 
 interface GwbrEntry {
-  id: number;
-  state: string;
-  licName: string;
-  licCode: string;
-  loaName: string;
-  loaCode: string;
+  id: number; state: string; licName: string; licCode: string; loaName: string; loaCode: string;
 }
 
 export interface PolicySetDrawerProps {
   open: boolean;
   onClose: () => void;
   isPlus?: boolean;
-  onSave: (ps: { name: string; gwbrIds: number[]; states: string[]; products: string[]; tasks: Task[] }) => void;
+  onSave: (ps: { name: string; orgWide: boolean; gwbrIds: number[]; states: string[]; products: string[]; tasks: Task[] }) => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"];
-
-const PRODUCTS = ["Property & Casualty (P&C)","Life Insurance","Health Insurance","Accident & Health (A&H)","Surplus Lines","Variable Products","Title Insurance","Crop / Agriculture","Workers Compensation","Medicare Supplement"];
+const PRODUCTS   = ["Property & Casualty (P&C)","Life Insurance","Health Insurance","Accident & Health (A&H)","Surplus Lines","Variable Products","Title Insurance","Crop / Agriculture","Workers Compensation","Medicare Supplement"];
 
 const GWBR_POOL: GwbrEntry[] = [
   {id:1,state:"CA",licName:"Property Broker-Agent",licCode:"210",loaName:"Fire & Allied Lines",loaCode:"031"},
@@ -97,20 +99,9 @@ const GWBR_POOL: GwbrEntry[] = [
 ];
 
 const COMPONENT_TYPES: { group: string; items: { type: ComponentType; label: string; icon: string }[] }[] = [
-  { group: "Content", items: [
-    { type: "text",       label: "Text Block",  icon: "¶" },
-    { type: "video",      label: "Video",       icon: "▶" },
-    { type: "file",       label: "File / Doc",  icon: "📎" },
-  ]},
-  { group: "Question", items: [
-    { type: "freetext",   label: "Free Text",   icon: "✏" },
-    { type: "picklist",   label: "Picklist",    icon: "☰" },
-    { type: "boolean",    label: "Yes / No",    icon: "⊙" },
-    { type: "fileupload", label: "File Upload", icon: "⬆" },
-  ]},
-  { group: "Other", items: [
-    { type: "signature",  label: "Signature",   icon: "✍" },
-  ]},
+  { group: "Content",  items: [{ type: "text", label: "Text Block", icon: "¶" }, { type: "video", label: "Video", icon: "▶" }, { type: "file", label: "File / Doc", icon: "📎" }] },
+  { group: "Question", items: [{ type: "freetext", label: "Free Text", icon: "✏" }, { type: "picklist", label: "Picklist", icon: "☰" }, { type: "boolean", label: "Yes / No", icon: "⊙" }, { type: "fileupload", label: "File Upload", icon: "⬆" }] },
+  { group: "Other",    items: [{ type: "signature", label: "Signature", icon: "✍" }, { type: "bankaccount", label: "Bank Account", icon: "🏦" }] },
 ];
 
 let _uid = 1;
@@ -118,202 +109,294 @@ const uid = () => `id_${_uid++}`;
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
-const PrimaryBtn = ({
-  children, onClick, disabled = false, style = {},
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  style?: React.CSSProperties;
-}) => (
-  <button onClick={onClick} disabled={disabled} style={{
-    fontSize: 13, fontWeight: 600, color: "#fff",
-    background: disabled ? C.muted : C.accent,
-    border: "none", borderRadius: 8, padding: "8px 20px",
-    cursor: disabled ? "not-allowed" : "pointer", ...style,
-  }}>{children}</button>
+const PrimaryBtn = ({ children, onClick, disabled = false, style = {} }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean; style?: React.CSSProperties }) => (
+  <button onClick={onClick} disabled={disabled} style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: disabled ? C.muted : C.accent, border: "none", borderRadius: 8, padding: "8px 20px", cursor: disabled ? "not-allowed" : "pointer", ...style }}>{children}</button>
 );
 
-const SecBtn = ({
-  children, onClick, style = {},
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  style?: React.CSSProperties;
-}) => (
-  <button onClick={onClick} style={{
-    fontSize: 13, fontWeight: 500, color: C.textMed,
-    background: C.bg, border: `1px solid ${C.border}`,
-    borderRadius: 8, padding: "8px 16px", cursor: "pointer", ...style,
-  }}>{children}</button>
+const SecBtn = ({ children, onClick, style = {} }: { children: React.ReactNode; onClick?: () => void; style?: React.CSSProperties }) => (
+  <button onClick={onClick} style={{ fontSize: 13, fontWeight: 500, color: C.textMed, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", ...style }}>{children}</button>
 );
 
-const SegToggle = ({
-  options, value, onChange,
-}: {
-  options: [string, string][];
-  value: string;
-  onChange: (v: string) => void;
-}) => (
+const SegToggle = ({ options, value, onChange }: { options: [string, string][]; value: string; onChange: (v: string) => void }) => (
   <div style={{ display: "flex", background: C.bg, borderRadius: 8, padding: 3, gap: 2, border: `1px solid ${C.border}` }}>
     {options.map(([val, label]) => (
-      <button key={val} onClick={() => onChange(val)} style={{
-        flex: 1, fontSize: 12, fontWeight: 600, padding: "5px 4px", borderRadius: 6, border: "none", cursor: "pointer",
-        background: value === val ? C.surface : "transparent",
-        color: value === val ? C.text : C.muted,
-        boxShadow: value === val ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
-        transition: "all .15s", whiteSpace: "nowrap",
-      }}>{label}</button>
+      <button key={val} onClick={() => onChange(val)} style={{ flex: 1, fontSize: 12, fontWeight: 600, padding: "5px 4px", borderRadius: 6, border: "none", cursor: "pointer", background: value === val ? C.surface : "transparent", color: value === val ? C.text : C.muted, boxShadow: value === val ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all .15s", whiteSpace: "nowrap" }}>{label}</button>
     ))}
   </div>
 );
 
-// ─── Reg: State selector ──────────────────────────────────────────────────────
 
-function StateSelector({
-  selected, onChange, onNext, onSkip,
-}: {
-  selected: string[];
-  onChange: (s: string[]) => void;
-  onNext: () => void;
-  onSkip: () => void;
-}) {
-  const [search, setSearch] = useState("");
-  const filtered = US_STATES.filter(s => s.toLowerCase().includes(search.toLowerCase()));
-  const toggle = (s: string) => onChange(selected.includes(s) ? selected.filter(x => x !== s) : [...selected, s]);
+
+// ─── Bank Account: Config Form ────────────────────────────────────────────────
+
+function ToggleRow({ label, desc, value, onChange }: { label: string; desc?: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "20px 24px", flex: 1, overflowY: "auto" }}>
-        <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>Choose all states this policy set applies to.</div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search states…" style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={() => onChange([...US_STATES])} style={{ fontSize: 12, color: C.accent, background: C.accentBg, border: `1px solid ${C.accentLight}44`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Select all</button>
-          <button onClick={() => onChange([])} style={{ fontSize: 12, color: C.textDim, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Clear</button>
-          {selected.length > 0 && <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>{selected.length} selected</span>}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
-          {filtered.map(s => (
-            <div key={s} onClick={() => toggle(s)} style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 36, borderRadius: 8, border: `1.5px solid ${selected.includes(s) ? C.accent : C.border}`, background: selected.includes(s) ? C.accentBg : C.surface, color: selected.includes(s) ? C.accent : C.textMed, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{s}</div>
-          ))}
-        </div>
+    <div onClick={() => onChange(!value)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", background: value ? C.accentBg : C.surface, border: `1.5px solid ${value ? C.accent : C.border}`, borderRadius: 10, cursor: "pointer", transition: "border-color .15s, background .15s" }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: value ? C.accent : C.text }}>{label}</div>
+        {desc && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{desc}</div>}
       </div>
-      <div style={{ padding: "14px 24px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button onClick={onSkip} style={{ fontSize: 12, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>Skip to GWBR selector →</button>
-        <PrimaryBtn onClick={onNext} disabled={selected.length === 0}>Continue →</PrimaryBtn>
+      <div style={{ width: 36, height: 20, borderRadius: 10, background: value ? C.accent : C.border, position: "relative", flexShrink: 0, transition: "background .2s" }}>
+        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: value ? 19 : 3, transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
       </div>
     </div>
   );
 }
 
-// ─── Reg: Product selector ────────────────────────────────────────────────────
-
-function ProductSelector({
-  selected, onChange, onNext, onSkip,
-}: {
-  selected: string[];
-  onChange: (p: string[]) => void;
-  onNext: () => void;
-  onSkip: () => void;
-}) {
-  const toggle = (p: string) => onChange(selected.includes(p) ? selected.filter(x => x !== p) : [...selected, p]);
+function FieldCard({ icon, label, desc, selected, onChange }: { icon: string; label: string; desc: string; selected: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "20px 24px", flex: 1, overflowY: "auto" }}>
-        <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>Choose the insurance product lines this policy set covers.</div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={() => onChange([...PRODUCTS])} style={{ fontSize: 12, color: C.accent, background: C.accentBg, border: `1px solid ${C.accentLight}44`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Select all</button>
-          <button onClick={() => onChange([])} style={{ fontSize: 12, color: C.textDim, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Clear</button>
+    <div onClick={() => onChange(!selected)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: selected ? C.accentBg : C.surface, border: `1.5px solid ${selected ? C.accent : C.border}`, borderRadius: 10, cursor: "pointer", transition: "all .15s" }}>
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: selected ? C.accent : C.bg, border: `1px solid ${selected ? C.accent : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0, transition: "all .15s" }}>
+        <span style={{ filter: selected ? "brightness(10)" : "none" }}>{icon}</span>
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: selected ? C.accent : C.text }}>{label}</div>
+        <div style={{ fontSize: 11, color: C.muted }}>{desc}</div>
+      </div>
+      <div style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${selected ? C.accent : C.border}`, background: selected ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        {selected && <span style={{ color: "#fff", fontSize: 10, fontWeight: 700 }}>✓</span>}
+      </div>
+    </div>
+  );
+}
+
+function BankAccountConfigForm({ config, onChange }: { config: ComponentConfig; onChange: (c: ComponentConfig) => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Component label</div>
+        <input value={config.label || ""} onChange={e => onChange({ ...config, label: e.target.value })} placeholder="e.g. Commission Payment Account" style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box" }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Producer instructions <span style={{ color: C.muted, fontWeight: 400 }}>(optional)</span></div>
+        <textarea value={config.instructions || ""} onChange={e => onChange({ ...config, instructions: e.target.value })} placeholder="e.g. Enter the account(s) where commissions will be deposited. Routing and account numbers are encrypted and stored securely." rows={3} style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 6 }}>Allowed account types</div>
+        <SegToggle
+          options={[["both", "Checking & Savings"], ["checking", "Checking only"], ["savings", "Savings only"]]}
+          value={config.allowedAccountTypes || "both"}
+          onChange={v => onChange({ ...config, allowedAccountTypes: v as "both" | "checking" | "savings" })}
+        />
+      </div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.textMed, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Account options</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <ToggleRow label="Allow multiple bank accounts" desc="Producer can add more than one account" value={!!config.allowMultiple} onChange={v => onChange({ ...config, allowMultiple: v, requireAllocation: v ? config.requireAllocation : false })} />
+          {config.allowMultiple && (
+            <ToggleRow label="Require pay allocation" desc="Producer must split commission across accounts" value={!!config.requireAllocation} onChange={v => onChange({ ...config, requireAllocation: v })} />
+          )}
+          {config.allowMultiple && config.requireAllocation && (
+            <div style={{ marginLeft: 8, paddingLeft: 12, borderLeft: `2px solid ${C.accentLight}44` }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 6 }}>Allocation method</div>
+              <SegToggle options={[["percentage", "% of earnings"], ["fixed", "Fixed $ amount"]]} value={config.allocMode || "percentage"} onChange={v => onChange({ ...config, allocMode: v as AllocMode })} />
+            </div>
+          )}
         </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.textMed, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Required fields</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          {PRODUCTS.map(p => (
-            <div key={p} onClick={() => toggle(p)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${selected.includes(p) ? C.accent : C.border}`, background: selected.includes(p) ? C.accentBg : C.surface, cursor: "pointer" }}>
-              <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selected.includes(p) ? C.accent : C.border}`, background: selected.includes(p) ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {selected.includes(p) && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>✓</span>}
+          <FieldCard icon="👤" label="Account holder name"  desc="Legal name on the account"           selected={!!config.requireAccountHolder} onChange={v => onChange({ ...config, requireAccountHolder: v })} />
+          <FieldCard icon="🏦" label="Bank name"            desc="Institution name"                    selected={!!config.requireBankName}      onChange={v => onChange({ ...config, requireBankName: v })} />
+          <FieldCard icon="🔢" label="Routing number"       desc="9-digit ABA routing number"          selected={!!config.requireRouting}       onChange={v => onChange({ ...config, requireRouting: v })} />
+          <FieldCard icon="💳" label="Account number"       desc="Checking or savings account number"  selected={!!config.requireAccountNumber} onChange={v => onChange({ ...config, requireAccountNumber: v })} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 11, color: C.muted }}>
+          <span>🔒</span>
+          <span>Routing and account numbers are encrypted at rest and never displayed in plaintext after submission.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Bank Account: Interactive Preview ───────────────────────────────────────
+
+const DEMO_ACCOUNTS = [
+  { id: "d1", label: "Account 1", bankName: "Chase Bank",  accountType: "Checking", last4: "4823", routing: "021000021", holder: "Jordan R. Smith", allocation: 70 },
+  { id: "d2", label: "Account 2", bankName: "Wells Fargo", accountType: "Savings",  last4: "9140", routing: "121042882", holder: "Jordan R. Smith", allocation: 30 },
+];
+
+function BankAccountPreview({ config }: { config: ComponentConfig }) {
+  const allowMultiple = config.allowMultiple ?? false;
+  const requireAlloc  = allowMultiple && (config.requireAllocation ?? false);
+  const allocMode     = config.allocMode || "percentage";
+  const showAccounts  = allowMultiple ? DEMO_ACCOUNTS : [DEMO_ACCOUNTS[0]];
+
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const toggle = (id: string) => setRevealed(p => ({ ...p, [id]: !p[id] }));
+
+  // Determine which fields are configured to show
+  const hasAnyField = config.requireAccountHolder || config.requireBankName || config.requireRouting || config.requireAccountNumber;
+
+  const inputStyle: React.CSSProperties = {
+    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7,
+    padding: "7px 10px", fontSize: 13, color: C.text, width: "100%",
+    boxSizing: "border-box",
+  };
+  const emptyStyle: React.CSSProperties = {
+    ...inputStyle, color: C.muted, fontStyle: "italic",
+  };
+  const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: C.textMed, marginBottom: 3 };
+
+  return (
+    <div style={{ width: "100%" }}>
+      {/* Title */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+        {config.label || "Commission Payment Account"}
+      </div>
+
+      {/* Instructions */}
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.6, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 10px" }}>
+        {config.instructions || "Enter the account(s) where commissions will be deposited. You may split pay across multiple accounts."}
+      </div>
+
+      {/* Security callout */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#16a34a" }}>
+        <span style={{ fontSize: 14 }}>🔒</span>
+        <span>Routing and account numbers are encrypted at rest and never displayed after submission.</span>
+      </div>
+
+      {/* Account cards */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {showAccounts.map((acct, idx) => (
+          <div key={acct.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+
+            {/* Card header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>🏦</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{acct.bankName}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{acct.accountType} ••••{acct.last4}</div>
+                </div>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 500, color: selected.includes(p) ? C.accent : C.text }}>{p}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {requireAlloc && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, background: C.accentBg, border: `1px solid ${C.accentLight}44`, borderRadius: 6, padding: "2px 10px" }}>
+                    {allocMode === "percentage" ? `${acct.allocation}%` : `${acct.allocation === 70 ? "2,100.00" : "900.00"}`}
+                  </span>
+                )}
+                <span style={{ fontSize: 11, color: C.success, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 5, padding: "2px 8px" }}>✓ Verified</span>
+                {allowMultiple && idx > 0 && (
+                  <button style={{ fontSize: 11, color: C.danger, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Remove</button>
+                )}
+              </div>
+            </div>
+
+            {/* Card body — always full-width grid */}
+            <div style={{ padding: "14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {config.requireAccountHolder && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={labelStyle}>Account holder name</div>
+                  <div style={inputStyle}>{acct.holder}</div>
+                </div>
+              )}
+              {config.requireBankName && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={labelStyle}>Bank name</div>
+                  <div style={inputStyle}>{acct.bankName}</div>
+                </div>
+              )}
+              {config.requireRouting && (
+                <div>
+                  <div style={labelStyle}>Routing number</div>
+                  <div style={{ position: "relative" }}>
+                    <div style={{ ...inputStyle, paddingRight: 48, fontFamily: "monospace", letterSpacing: revealed[acct.id] ? 1 : 2 }}>
+                      {revealed[acct.id] ? acct.routing : "•".repeat(5) + acct.routing.slice(-4)}
+                    </div>
+                    <button onClick={() => toggle(acct.id)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 11, color: C.accent, fontWeight: 600, padding: 0 }}>
+                      {revealed[acct.id] ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {config.requireAccountNumber && (
+                <div>
+                  <div style={labelStyle}>Account number</div>
+                  <div style={{ ...inputStyle, fontFamily: "monospace", letterSpacing: 2 }}>{"•".repeat(6)}{acct.last4}</div>
+                </div>
+              )}
+
+              {/* Empty state fields when no required fields are toggled on yet */}
+              {!hasAnyField && (
+                <>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div style={labelStyle}>Bank name</div>
+                    <div style={emptyStyle}>e.g. Chase Bank</div>
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Routing number</div>
+                    <div style={emptyStyle}>••••• 0021</div>
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Account number</div>
+                    <div style={emptyStyle}>•••••• 4823</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Add bank account CTA — hyperlink style when no accounts added yet, button when multiple allowed */}
+      {allowMultiple ? (
+        <button style={{ marginTop: 10, width: "100%", padding: "9px", border: `1.5px dashed ${C.accentLight}`, borderRadius: 10, background: C.accentBg, color: C.accent, fontSize: 13, fontWeight: 600, cursor: "default" }}>
+          + Add Another Account
+        </button>
+      ) : (
+        <div style={{ marginTop: 12, textAlign: "center" }}>
+          <button style={{ background: "none", border: "none", cursor: "default", fontSize: 13, color: C.accent, fontWeight: 500, textDecoration: "underline", textDecorationStyle: "dotted", padding: 0 }}>
+            + Add bank account
+          </button>
+        </div>
+      )}
+
+      {/* Allocation summary */}
+      {requireAlloc && allocMode === "percentage" && (
+        <div style={{ marginTop: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.textMed }}>Total allocation</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.success }}>100% ✓</span>
+          </div>
+          <div style={{ background: C.border, borderRadius: 99, height: 8, overflow: "hidden", display: "flex" }}>
+            <div style={{ width: "70%", background: C.accent,  height: 8, transition: "width .3s" }} />
+            <div style={{ width: "30%", background: "#7c3aed", height: 8, transition: "width .3s" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+            {DEMO_ACCOUNTS.map((a, i) => (
+              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: C.muted }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, background: i === 0 ? C.accent : "#7c3aed" }} />
+                <span>{a.bankName} — {a.allocation}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {requireAlloc && allocMode === "fixed" && (
+        <div style={{ marginTop: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.textMed }}>Pay distribution</span>
+            <span style={{ fontSize: 11, color: C.success }}>✓ Amounts set</span>
+          </div>
+          {DEMO_ACCOUNTS.slice(0, showAccounts.length).map(a => (
+            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.textMed, marginBottom: 4 }}>
+              <span>{a.bankName} ••••{a.last4}</span>
+              <span style={{ fontWeight: 600, color: C.text }}>${a.id === "d1" ? "2,100.00" : "900.00"}</span>
             </div>
           ))}
         </div>
-      </div>
-      <div style={{ padding: "14px 24px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button onClick={onSkip} style={{ fontSize: 12, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>Skip to GWBR selector →</button>
-        <PrimaryBtn onClick={onNext} disabled={selected.length === 0}>Continue →</PrimaryBtn>
-      </div>
-    </div>
-  );
-}
-
-// ─── Reg: GWBR list ───────────────────────────────────────────────────────────
-
-function GWBRList({
-  selectedIds, onChangeSelected, onConfirm, onReset,
-}: {
-  selectedIds: number[];
-  onChangeSelected: (ids: number[]) => void;
-  onConfirm: () => void;
-  onReset: () => void;
-}) {
-  const [tab, setTab] = useState<TabType>("selected");
-  const [search, setSearch] = useState("");
-  const selSet = new Set(selectedIds);
-  const q = search.toLowerCase();
-  const match = (g: GwbrEntry) => `${g.state} ${g.licName} ${g.licCode} ${g.loaName} ${g.loaCode}`.toLowerCase().includes(q);
-  const visible = GWBR_POOL.filter(g => {
-    if (tab === "selected")   return selSet.has(g.id) && match(g);
-    if (tab === "unselected") return !selSet.has(g.id) && match(g);
-    return match(g);
-  });
-  const add    = (id: number) => onChangeSelected([...selectedIds, id]);
-  const remove = (id: number) => onChangeSelected(selectedIds.filter(x => x !== id));
-  const selCount = selectedIds.length;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "14px 24px 12px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rules…" style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 12px", fontSize: 13, color: C.text, outline: "none" }} />
-        <SegToggle options={[["selected",`Selected (${selCount})`],["unselected",`Unselected (${GWBR_POOL.length - selCount})`],["all",`All (${GWBR_POOL.length})`]]} value={tab} onChange={v => { setTab(v as TabType); setSearch(""); }} />
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 24px" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {visible.map(g => {
-            const isSel = selSet.has(g.id);
-            return (
-              <div key={g.id} style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }}>
-                <span style={{ flex: 1, fontSize: 13, color: C.text }}>
-                  <span style={{ fontWeight: 700, color: C.accent }}>{g.state}</span>
-                  <span style={{ color: C.muted, margin: "0 6px" }}>—</span>
-                  <span>{g.licName}</span><span style={{ color: C.muted }}> ({g.licCode})</span>
-                  <span style={{ color: C.muted, margin: "0 6px" }}>—</span>
-                  <span>{g.loaName}</span><span style={{ color: C.muted }}> ({g.loaCode})</span>
-                </span>
-                {isSel
-                  ? <button onClick={() => remove(g.id)} style={{ marginLeft: 12, fontSize: 11, fontWeight: 500, color: C.danger, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Remove</button>
-                  : <button onClick={() => add(g.id)} style={{ marginLeft: 12, fontSize: 11, fontWeight: 500, color: C.success, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>+ Add</button>
-                }
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div style={{ padding: "14px 24px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 12, color: C.muted }}>{selCount} rule{selCount !== 1 ? "s" : ""} selected</span>
-        <div style={{ display: "flex", gap: 8 }}>
-          <SecBtn onClick={onReset}>Start Over</SecBtn>
-          <PrimaryBtn onClick={onConfirm} disabled={selCount === 0}>Confirm Rules</PrimaryBtn>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
 // ─── Org: Component config ────────────────────────────────────────────────────
 
-function ComponentConfigForm({
-  type, config, onChange,
-}: {
-  type: ComponentType;
-  config: ComponentConfig;
-  onChange: (c: ComponentConfig) => void;
-}) {
+function ComponentConfigForm({ type, config, onChange }: { type: ComponentType; config: ComponentConfig; onChange: (c: ComponentConfig) => void }) {
   const field = (label: string, key: keyof ComponentConfig, placeholder = "", multiline = false) => (
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>{label}</div>
@@ -324,155 +407,34 @@ function ComponentConfigForm({
     </div>
   );
 
-  if (type === "text") return <div>{field("Label (optional)", "label", "e.g. Welcome Message")}{field("Content", "content", "Enter text content…", true)}</div>;
-  if (type === "video") return <div>{field("Label", "label", "e.g. Onboarding Video")}{field("Video URL", "url", "https://…")}{field("Description (optional)", "description", "Brief description…")}</div>;
-  if (type === "file") return <div>{field("Label", "label", "e.g. Agent Agreement")}{field("File URL or name", "url", "https://… or filename.pdf")}{field("Description (optional)", "description", "")}</div>;
-  if (type === "freetext") return (
-    <div>
-      {field("Question", "question", "e.g. Describe your experience…")}
-      {field("Placeholder hint (optional)", "placeholder", "e.g. Enter your answer here")}
-      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-        <input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} />
-        <span style={{ fontSize: 13, color: C.text }}>Required</span>
-      </label>
-    </div>
-  );
-  if (type === "picklist") return (
-    <div>
-      {field("Question", "question", "e.g. Select your license type")}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Options (one per line)</div>
-        <textarea value={config.options || ""} onChange={e => onChange({ ...config, options: e.target.value })} placeholder={"Option 1\nOption 2\nOption 3"} rows={5} style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
-      </div>
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Selection type</div>
-        <SegToggle options={[["single","Single select"],["multi","Multi-select"]]} value={config.selType || "single"} onChange={v => onChange({ ...config, selType: v as "single" | "multi" })} />
-      </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-        <input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} />
-        <span style={{ fontSize: 13, color: C.text }}>Required</span>
-      </label>
-    </div>
-  );
-  if (type === "boolean") return (
-    <div>
-      {field("Question", "question", "e.g. Do you agree to the terms?")}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Display as</div>
-        <SegToggle options={[["toggle","Toggle"],["radio","Yes / No buttons"],["checkbox","Checkbox"]]} value={config.display || "toggle"} onChange={v => onChange({ ...config, display: v as "toggle" | "radio" | "checkbox" })} />
-      </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-        <input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} />
-        <span style={{ fontSize: 13, color: C.text }}>Required</span>
-      </label>
-    </div>
-  );
-  if (type === "fileupload") return (
-    <div>
-      {field("Label", "label", "e.g. Upload your E&O Certificate")}
-      {field("Instructions (optional)", "instructions", "e.g. PDF only, max 5 MB")}
-      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-        <input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} />
-        <span style={{ fontSize: 13, color: C.text }}>Required</span>
-      </label>
-    </div>
-  );
-  if (type === "signature") return (
-    <div>
-      {field("Label", "label", "e.g. Agent Acknowledgement")}
-      {field("Prompt text", "prompt", "e.g. I agree to all terms and conditions.")}
-      {field("Signer role (optional)", "signerRole", "e.g. Agent, Manager")}
-    </div>
-  );
+  if (type === "text")        return <div>{field("Label (optional)", "label", "e.g. Welcome Message")}{field("Content", "content", "Enter text content…", true)}</div>;
+  if (type === "video")       return <div>{field("Label", "label", "e.g. Onboarding Video")}{field("Video URL", "url", "https://…")}{field("Description (optional)", "description", "Brief description…")}</div>;
+  if (type === "file")        return <div>{field("Label", "label", "e.g. Agent Agreement")}{field("File URL or name", "url", "https://… or filename.pdf")}{field("Description (optional)", "description", "")}</div>;
+  if (type === "freetext")    return (<div>{field("Question", "question", "e.g. Describe your experience…")}{field("Placeholder hint (optional)", "placeholder", "e.g. Enter your answer here")}<label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} /><span style={{ fontSize: 13, color: C.text }}>Required</span></label></div>);
+  if (type === "picklist")    return (<div>{field("Question", "question", "e.g. Select your license type")}<div style={{ marginBottom: 14 }}><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Options (one per line)</div><textarea value={config.options || ""} onChange={e => onChange({ ...config, options: e.target.value })} placeholder={"Option 1\nOption 2\nOption 3"} rows={5} style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box", resize: "vertical" }} /></div><div style={{ marginBottom: 14 }}><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Selection type</div><SegToggle options={[["single","Single select"],["multi","Multi-select"]]} value={config.selType || "single"} onChange={v => onChange({ ...config, selType: v as "single" | "multi" })} /></div><label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} /><span style={{ fontSize: 13, color: C.text }}>Required</span></label></div>);
+  if (type === "boolean")     return (<div>{field("Question", "question", "e.g. Do you agree to the terms?")}<div style={{ marginBottom: 14 }}><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 5 }}>Display as</div><SegToggle options={[["toggle","Toggle"],["radio","Yes / No buttons"],["checkbox","Checkbox"]]} value={config.display || "toggle"} onChange={v => onChange({ ...config, display: v as "toggle" | "radio" | "checkbox" })} /></div><label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} /><span style={{ fontSize: 13, color: C.text }}>Required</span></label></div>);
+  if (type === "fileupload")  return (<div>{field("Label", "label", "e.g. Upload your E&O Certificate")}{field("Instructions (optional)", "instructions", "e.g. PDF only, max 5 MB")}<label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={!!config.required} onChange={e => onChange({ ...config, required: e.target.checked })} /><span style={{ fontSize: 13, color: C.text }}>Required</span></label></div>);
+  if (type === "signature")   return (<div>{field("Label", "label", "e.g. Agent Acknowledgement")}{field("Prompt text", "prompt", "e.g. I agree to all terms and conditions.")}{field("Signer role (optional)", "signerRole", "e.g. Agent, Manager")}</div>);
+  if (type === "bankaccount") return <BankAccountConfigForm config={config} onChange={onChange} />;
   return null;
 }
 
 // ─── Org: Component preview ───────────────────────────────────────────────────
 
-function ComponentPreview({
-  comp, onEdit, onRemove,
-}: {
-  comp: TaskComponent;
-  onEdit: () => void;
-  onRemove: () => void;
-}) {
+function ComponentPreview({ comp, onEdit, onRemove }: { comp: TaskComponent; onEdit: () => void; onRemove: () => void }) {
   const typeInfo = COMPONENT_TYPES.flatMap(g => g.items).find(i => i.type === comp.type) ?? { icon: "?", label: comp.type };
   const c = comp.config;
 
   const renderContent = () => {
-    if (comp.type === "text") return (
-      <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-        {c.label && <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{c.label}</div>}
-        {c.content ? <div>{c.content}</div> : <div style={{ color: C.muted, fontStyle: "italic" }}>No content yet</div>}
-      </div>
-    );
-    if (comp.type === "video") return (
-      <div>
-        {c.label && <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>{c.label}</div>}
-        <div style={{ background: "#111", borderRadius: 8, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontSize: 28, color: "#fff" }}>▶</span>
-        </div>
-        {c.url && <div style={{ fontSize: 11, color: C.muted, marginTop: 4, wordBreak: "break-all" }}>{c.url}</div>}
-      </div>
-    );
-    if (comp.type === "file") return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}>
-        <span style={{ fontSize: 22 }}>📎</span>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{c.label || "Attachment"}</div>
-          {c.url && <div style={{ fontSize: 11, color: C.muted }}>{c.url}</div>}
-        </div>
-      </div>
-    );
-    if (comp.type === "freetext") return (
-      <div>
-        {c.question && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 6 }}>{c.question}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}
-        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.muted, minHeight: 60 }}>{c.placeholder || "Enter your answer…"}</div>
-      </div>
-    );
-    if (comp.type === "picklist") return (
-      <div>
-        {c.question && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 8 }}>{c.question}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {(c.options || "Option 1\nOption 2").split("\n").filter(Boolean).slice(0, 4).map((opt: string, i: number) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 10px" }}>
-              <div style={{ width: 14, height: 14, borderRadius: c.selType === "multi" ? 3 : "50%", border: `2px solid ${C.border}` }} />
-              <span style={{ fontSize: 13, color: C.text }}>{opt}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-    if (comp.type === "boolean") return (
-      <div>
-        {c.question && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 8 }}>{c.question}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}
-        {c.display === "radio"
-          ? <div style={{ display: "flex", gap: 8 }}>{["Yes","No"].map(opt => <div key={opt} style={{ flex: 1, textAlign: "center", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px", fontSize: 13, color: C.text, background: C.bg }}>{opt}</div>)}</div>
-          : c.display === "checkbox"
-          ? <label style={{ display: "flex", alignItems: "center", gap: 8 }}><input type="checkbox" disabled /><span style={{ fontSize: 13, color: C.text }}>Confirm</span></label>
-          : <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 40, height: 22, borderRadius: 11, background: C.border, position: "relative" }}><div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: 2 }} /></div><span style={{ fontSize: 13, color: C.muted }}>Off</span></div>
-        }
-      </div>
-    );
-    if (comp.type === "fileupload") return (
-      <div>
-        {c.label && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 6 }}>{c.label}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}
-        <div style={{ border: `2px dashed ${C.border}`, borderRadius: 10, padding: "20px", textAlign: "center" }}>
-          <div style={{ fontSize: 22, marginBottom: 4 }}>⬆</div>
-          <div style={{ fontSize: 13, color: C.muted }}>{c.instructions || "Click to upload or drag & drop"}</div>
-        </div>
-      </div>
-    );
-    if (comp.type === "signature") return (
-      <div>
-        {c.label && <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>{c.label}</div>}
-        {c.prompt && <div style={{ fontSize: 13, color: C.textMed, marginBottom: 10, lineHeight: 1.5 }}>{c.prompt}</div>}
-        <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, height: 60, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>Signature field</span>
-        </div>
-        {c.signerRole && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Signer: {c.signerRole}</div>}
-      </div>
-    );
+    if (comp.type === "text")        return (<div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{c.label && <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{c.label}</div>}{c.content ? <div>{c.content}</div> : <div style={{ color: C.muted, fontStyle: "italic" }}>No content yet</div>}</div>);
+    if (comp.type === "video")       return (<div>{c.label && <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>{c.label}</div>}<div style={{ background: "#111", borderRadius: 8, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 28, color: "#fff" }}>▶</span></div>{c.url && <div style={{ fontSize: 11, color: C.muted, marginTop: 4, wordBreak: "break-all" }}>{c.url}</div>}</div>);
+    if (comp.type === "file")        return (<div style={{ display: "flex", alignItems: "center", gap: 10, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}><span style={{ fontSize: 22 }}>📎</span><div><div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{c.label || "Attachment"}</div>{c.url && <div style={{ fontSize: 11, color: C.muted }}>{c.url}</div>}</div></div>);
+    if (comp.type === "freetext")    return (<div>{c.question && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 6 }}>{c.question}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}<div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.muted, minHeight: 60 }}>{c.placeholder || "Enter your answer…"}</div></div>);
+    if (comp.type === "picklist")    return (<div>{c.question && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 8 }}>{c.question}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{(c.options || "Option 1\nOption 2").split("\n").filter(Boolean).slice(0, 4).map((opt: string, i: number) => (<div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 10px" }}><div style={{ width: 14, height: 14, borderRadius: c.selType === "multi" ? 3 : "50%", border: `2px solid ${C.border}` }} /><span style={{ fontSize: 13, color: C.text }}>{opt}</span></div>))}</div></div>);
+    if (comp.type === "boolean")     return (<div>{c.question && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 8 }}>{c.question}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}{c.display === "radio" ? <div style={{ display: "flex", gap: 8 }}>{["Yes","No"].map(o => <div key={o} style={{ flex: 1, textAlign: "center", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px", fontSize: 13, color: C.text, background: C.bg }}>{o}</div>)}</div> : c.display === "checkbox" ? <label style={{ display: "flex", alignItems: "center", gap: 8 }}><input type="checkbox" disabled /><span style={{ fontSize: 13, color: C.text }}>Confirm</span></label> : <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 40, height: 22, borderRadius: 11, background: C.border, position: "relative" }}><div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: 2 }} /></div><span style={{ fontSize: 13, color: C.muted }}>Off</span></div>}</div>);
+    if (comp.type === "fileupload")  return (<div>{c.label && <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 6 }}>{c.label}{c.required && <span style={{ color: C.danger }}> *</span>}</div>}<div style={{ border: `2px dashed ${C.border}`, borderRadius: 10, padding: "20px", textAlign: "center" }}><div style={{ fontSize: 22, marginBottom: 4 }}>⬆</div><div style={{ fontSize: 13, color: C.muted }}>{c.instructions || "Click to upload or drag & drop"}</div></div></div>);
+    if (comp.type === "signature")   return (<div>{c.label && <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>{c.label}</div>}{c.prompt && <div style={{ fontSize: 13, color: C.textMed, marginBottom: 10, lineHeight: 1.5 }}>{c.prompt}</div>}<div style={{ border: `1px solid ${C.border}`, borderRadius: 8, height: 60, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>Signature field</span></div>{c.signerRole && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Signer: {c.signerRole}</div>}</div>);
+    if (comp.type === "bankaccount") return <BankAccountPreview config={c} />;
     return <div style={{ fontSize: 12, color: C.muted }}>{typeInfo.label} component</div>;
   };
 
@@ -481,8 +443,8 @@ function ComponentPreview({
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: C.bg, borderBottom: `1px solid ${C.border}` }}>
         <span style={{ color: C.accent, fontSize: 11, fontWeight: 600, background: C.accentBg, border: `1px solid ${C.accentLight}44`, borderRadius: 4, padding: "1px 6px" }}>{typeInfo.icon} {typeInfo.label}</span>
         <div style={{ flex: 1 }} />
-        <button onClick={onEdit} style={{ fontSize: 11, color: C.textMed, background: "none", border: `1px solid ${C.border}`, borderRadius: 5, padding: "2px 8px", cursor: "pointer" }}>Edit</button>
-        <button onClick={onRemove} style={{ fontSize: 11, color: C.danger, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, padding: "2px 8px", cursor: "pointer" }}>✕</button>
+        <button onClick={onEdit}   style={{ fontSize: 11, color: C.textMed, background: "none", border: `1px solid ${C.border}`, borderRadius: 5, padding: "2px 8px", cursor: "pointer" }}>Edit</button>
+        <button onClick={onRemove} style={{ fontSize: 11, color: C.danger,  background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, padding: "2px 8px", cursor: "pointer" }}>✕</button>
       </div>
       <div style={{ padding: "12px 14px" }}>{renderContent()}</div>
     </div>
@@ -493,40 +455,23 @@ function ComponentPreview({
 
 type EditorSubView = "editor" | "addComponent" | "configComponent";
 
-function TaskEditor({
-  task, onChange, onBack, onDone,
-}: {
-  task: Task;
-  onChange: (t: Task) => void;
-  onBack: () => void;
-  onDone: () => void;
-}) {
-  const [subView, setSubView] = useState<EditorSubView>("editor");
+function TaskEditor({ task, onChange, onBack, onDone }: { task: Task; onChange: (t: Task) => void; onBack: () => void; onDone: () => void }) {
+  const [subView,       setSubView]       = useState<EditorSubView>("editor");
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
-  const [draftConfig, setDraftConfig] = useState<ComponentConfig>({});
-  const [draftType, setDraftType] = useState<ComponentType | null>(null);
+  const [draftConfig,   setDraftConfig]   = useState<ComponentConfig>({});
+  const [draftType,     setDraftType]     = useState<ComponentType | null>(null);
 
-  const startAdd = (type: ComponentType) => { setDraftType(type); setDraftConfig({}); setEditingCompId(null); setSubView("configComponent"); };
+  const startAdd  = (type: ComponentType) => { setDraftType(type); setDraftConfig({}); setEditingCompId(null); setSubView("configComponent"); };
   const startEdit = (comp: TaskComponent) => { setDraftType(comp.type); setDraftConfig({ ...comp.config }); setEditingCompId(comp.id); setSubView("configComponent"); };
-  const saveComp = () => {
+  const saveComp  = () => {
     if (!draftType) return;
-    if (editingCompId) {
-      onChange({ ...task, components: task.components.map(c => c.id === editingCompId ? { ...c, config: draftConfig } : c) });
-    } else {
-      onChange({ ...task, components: [...task.components, { id: uid(), type: draftType, config: draftConfig }] });
-    }
+    if (editingCompId) onChange({ ...task, components: task.components.map(c => c.id === editingCompId ? { ...c, config: draftConfig } : c) });
+    else               onChange({ ...task, components: [...task.components, { id: uid(), type: draftType, config: draftConfig }] });
     setSubView("editor");
   };
   const removeComp = (id: string) => onChange({ ...task, components: task.components.filter(c => c.id !== id) });
-  const moveComp = (idx: number, dir: number) => {
-    const arr = [...task.components];
-    const swp = idx + dir;
-    if (swp < 0 || swp >= arr.length) return;
-    [arr[idx], arr[swp]] = [arr[swp], arr[idx]];
-    onChange({ ...task, components: arr });
-  };
-
-  const typeInfo = draftType ? COMPONENT_TYPES.flatMap(g => g.items).find(i => i.type === draftType) : null;
+  const moveComp   = (idx: number, dir: number) => { const arr = [...task.components], swp = idx + dir; if (swp < 0 || swp >= arr.length) return; [arr[idx], arr[swp]] = [arr[swp], arr[idx]]; onChange({ ...task, components: arr }); };
+  const typeInfo   = draftType ? COMPONENT_TYPES.flatMap(g => g.items).find(i => i.type === draftType) : null;
 
   if (subView === "addComponent") return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -583,35 +528,22 @@ function TaskEditor({
               <input value={task.name} onChange={e => onChange({ ...task, name: e.target.value })} placeholder="e.g. E&O Certificate Upload" style={{ width: "100%", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Type</div>
-                <SegToggle options={[["internal","Internal"],["external","External"]]} value={task.type} onChange={v => onChange({ ...task, type: v as TaskType })} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Owner</div>
-                <SegToggle options={[["producer","Producer"],["Operations","Operations"]]} value={task.owner} onChange={v => onChange({ ...task, owner: v as OwnerType })} />
-              </div>
+              <div><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Type</div><SegToggle options={[["internal","Internal"],["external","External"]]} value={task.type} onChange={v => onChange({ ...task, type: v as TaskType })} /></div>
+              <div><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Owner</div><SegToggle options={[["producer","Producer"],["Operations","Operations"]]} value={task.owner} onChange={v => onChange({ ...task, owner: v as OwnerType })} /></div>
             </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Requires approval</div>
-              <SegToggle options={[["no","No"],["yes","Yes"]]} value={task.approval} onChange={v => onChange({ ...task, approval: v as ApprovalType })} />
-            </div>
+            <div><div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 4 }}>Requires approval</div><SegToggle options={[["no","No"],["yes","Yes"]]} value={task.approval} onChange={v => onChange({ ...task, approval: v as ApprovalType })} /></div>
           </div>
         </div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-          Task Preview — Components ({task.components.length})
-        </div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Task Preview — Components ({task.components.length})</div>
         {task.components.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "28px 0", border: `2px dashed ${C.border}`, borderRadius: 10, color: C.muted, fontSize: 13 }}>
-            No components yet.<br /><span style={{ fontSize: 12 }}>Add components below to build the task.</span>
-          </div>
+          <div style={{ textAlign: "center", padding: "28px 0", border: `2px dashed ${C.border}`, borderRadius: 10, color: C.muted, fontSize: 13 }}>No components yet.<br /><span style={{ fontSize: 12 }}>Add components below to build the task.</span></div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 32 }}>
             {task.components.map((comp, idx) => (
               <div key={comp.id} style={{ position: "relative" }}>
                 <ComponentPreview comp={comp} onEdit={() => startEdit(comp)} onRemove={() => removeComp(comp.id)} />
                 <div style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", left: -28, display: "flex", flexDirection: "column", gap: 2 }}>
-                  <button onClick={() => moveComp(idx, -1)} disabled={idx === 0} style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", color: idx === 0 ? C.borderLight : C.muted, fontSize: 12, padding: 1 }}>▲</button>
+                  <button onClick={() => moveComp(idx, -1)} disabled={idx === 0}                        style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer",                        color: idx === 0 ? C.borderLight : C.muted,                        fontSize: 12, padding: 1 }}>▲</button>
                   <button onClick={() => moveComp(idx, 1)} disabled={idx === task.components.length - 1} style={{ background: "none", border: "none", cursor: idx === task.components.length - 1 ? "default" : "pointer", color: idx === task.components.length - 1 ? C.borderLight : C.muted, fontSize: 12, padding: 1 }}>▼</button>
                 </div>
               </div>
@@ -636,22 +568,8 @@ const TYPE_COLORS: Record<TaskType, { bg: string; text: string; border: string }
 };
 const OWNER_LABEL: Record<OwnerType, string> = { producer: "Producer", internal: "Internal" };
 
-function TaskSequencer({
-  tasks, onChangeTasks, onConfirm, onAddTask, onEditTask,
-}: {
-  tasks: Task[];
-  onChangeTasks: (t: Task[]) => void;
-  onConfirm: () => void;
-  onAddTask: () => void;
-  onEditTask: (t: Task) => void;
-}) {
-  const move = (idx: number, dir: number) => {
-    const arr = [...tasks];
-    const swp = idx + dir;
-    if (swp < 0 || swp >= arr.length) return;
-    [arr[idx], arr[swp]] = [arr[swp], arr[idx]];
-    onChangeTasks(arr);
-  };
+function TaskSequencer({ tasks, onChangeTasks, onConfirm, onAddTask, onEditTask }: { tasks: Task[]; onChangeTasks: (t: Task[]) => void; onConfirm: () => void; onAddTask: () => void; onEditTask: (t: Task) => void }) {
+  const move   = (idx: number, dir: number) => { const arr = [...tasks], swp = idx + dir; if (swp < 0 || swp >= arr.length) return; [arr[idx], arr[swp]] = [arr[swp], arr[idx]]; onChangeTasks(arr); };
   const remove = (id: string) => onChangeTasks(tasks.filter(t => t.id !== id));
 
   return (
@@ -667,8 +585,8 @@ function TaskSequencer({
               return (
                 <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
-                    <button onClick={() => move(idx, -1)} disabled={idx === 0} style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", color: idx === 0 ? C.borderLight : C.muted, fontSize: 11, lineHeight: 1 }}>▲</button>
-                    <button onClick={() => move(idx, 1)} disabled={idx === tasks.length - 1} style={{ background: "none", border: "none", cursor: idx === tasks.length - 1 ? "default" : "pointer", color: idx === tasks.length - 1 ? C.borderLight : C.muted, fontSize: 11, lineHeight: 1 }}>▼</button>
+                    <button onClick={() => move(idx, -1)} disabled={idx === 0}                 style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer",                 color: idx === 0 ? C.borderLight : C.muted,                 fontSize: 11, lineHeight: 1 }}>▲</button>
+                    <button onClick={() => move(idx, 1)} disabled={idx === tasks.length - 1}   style={{ background: "none", border: "none", cursor: idx === tasks.length - 1 ? "default" : "pointer", color: idx === tasks.length - 1 ? C.borderLight : C.muted, fontSize: 11, lineHeight: 1 }}>▼</button>
                   </div>
                   <div style={{ width: 28, height: 28, borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: C.muted, flexShrink: 0 }}>{idx + 1}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -697,92 +615,157 @@ function TaskSequencer({
   );
 }
 
+// ─── Reg: State selector ──────────────────────────────────────────────────────
+
+function StateSelector({ selected, onChange, onNext, onSkip }: { selected: string[]; onChange: (s: string[]) => void; onNext: () => void; onSkip: () => void }) {
+  const [search, setSearch] = useState("");
+  const filtered = US_STATES.filter(s => s.toLowerCase().includes(search.toLowerCase()));
+  const toggle = (s: string) => onChange(selected.includes(s) ? selected.filter(x => x !== s) : [...selected, s]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ padding: "20px 24px", flex: 1, overflowY: "auto" }}>
+        <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>Choose all states this policy set applies to.</div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search states…" style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: C.text, outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button onClick={() => onChange([...US_STATES])} style={{ fontSize: 12, color: C.accent, background: C.accentBg, border: `1px solid ${C.accentLight}44`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Select all</button>
+          <button onClick={() => onChange([])}             style={{ fontSize: 12, color: C.textDim, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Clear</button>
+          {selected.length > 0 && <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>{selected.length} selected</span>}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
+          {filtered.map(s => (<div key={s} onClick={() => toggle(s)} style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 36, borderRadius: 8, border: `1.5px solid ${selected.includes(s) ? C.accent : C.border}`, background: selected.includes(s) ? C.accentBg : C.surface, color: selected.includes(s) ? C.accent : C.textMed, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{s}</div>))}
+        </div>
+      </div>
+      <div style={{ padding: "14px 24px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button onClick={onSkip} style={{ fontSize: 12, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>Skip to GWBR selector →</button>
+        <PrimaryBtn onClick={onNext} disabled={selected.length === 0}>Continue →</PrimaryBtn>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reg: Product selector ────────────────────────────────────────────────────
+
+function ProductSelector({ selected, onChange, onNext, onSkip }: { selected: string[]; onChange: (p: string[]) => void; onNext: () => void; onSkip: () => void }) {
+  const toggle = (p: string) => onChange(selected.includes(p) ? selected.filter(x => x !== p) : [...selected, p]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ padding: "20px 24px", flex: 1, overflowY: "auto" }}>
+        <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>Choose the insurance product lines this policy set covers.</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button onClick={() => onChange([...PRODUCTS])} style={{ fontSize: 12, color: C.accent, background: C.accentBg, border: `1px solid ${C.accentLight}44`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Select all</button>
+          <button onClick={() => onChange([])}            style={{ fontSize: 12, color: C.textDim, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>Clear</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {PRODUCTS.map(p => (<div key={p} onClick={() => toggle(p)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${selected.includes(p) ? C.accent : C.border}`, background: selected.includes(p) ? C.accentBg : C.surface, cursor: "pointer" }}><div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selected.includes(p) ? C.accent : C.border}`, background: selected.includes(p) ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{selected.includes(p) && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>✓</span>}</div><span style={{ fontSize: 13, fontWeight: 500, color: selected.includes(p) ? C.accent : C.text }}>{p}</span></div>))}
+        </div>
+      </div>
+      <div style={{ padding: "14px 24px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button onClick={onSkip} style={{ fontSize: 12, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>Skip to GWBR selector →</button>
+        <PrimaryBtn onClick={onNext} disabled={selected.length === 0}>Continue →</PrimaryBtn>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reg: GWBR list ───────────────────────────────────────────────────────────
+
+function GWBRList({ selectedIds, onChangeSelected, onConfirm, onReset }: { selectedIds: number[]; onChangeSelected: (ids: number[]) => void; onConfirm: () => void; onReset: () => void }) {
+  const [tab,    setTab]    = useState<TabType>("selected");
+  const [search, setSearch] = useState("");
+  const selSet = new Set(selectedIds);
+  const q = search.toLowerCase();
+  const match = (g: GwbrEntry) => `${g.state} ${g.licName} ${g.licCode} ${g.loaName} ${g.loaCode}`.toLowerCase().includes(q);
+  const visible = GWBR_POOL.filter(g => { if (tab === "selected") return selSet.has(g.id) && match(g); if (tab === "unselected") return !selSet.has(g.id) && match(g); return match(g); });
+  const add    = (id: number) => onChangeSelected([...selectedIds, id]);
+  const remove = (id: number) => onChangeSelected(selectedIds.filter(x => x !== id));
+  const selCount = selectedIds.length;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ padding: "14px 24px 12px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rules…" style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 12px", fontSize: 13, color: C.text, outline: "none" }} />
+        <SegToggle options={[["selected",`Selected (${selCount})`],["unselected",`Unselected (${GWBR_POOL.length - selCount})`],["all",`All (${GWBR_POOL.length})`]]} value={tab} onChange={v => { setTab(v as TabType); setSearch(""); }} />
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 24px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {visible.map(g => { const isSel = selSet.has(g.id); return (
+            <div key={g.id} style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+              <span style={{ flex: 1, fontSize: 13, color: C.text }}><span style={{ fontWeight: 700, color: C.accent }}>{g.state}</span><span style={{ color: C.muted, margin: "0 6px" }}>—</span><span>{g.licName}</span><span style={{ color: C.muted }}> ({g.licCode})</span><span style={{ color: C.muted, margin: "0 6px" }}>—</span><span>{g.loaName}</span><span style={{ color: C.muted }}> ({g.loaCode})</span></span>
+              {isSel ? <button onClick={() => remove(g.id)} style={{ marginLeft: 12, fontSize: 11, fontWeight: 500, color: C.danger, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Remove</button>
+                     : <button onClick={() => add(g.id)}    style={{ marginLeft: 12, fontSize: 11, fontWeight: 500, color: C.success, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>+ Add</button>}
+            </div>
+          ); })}
+        </div>
+      </div>
+      <div style={{ padding: "14px 24px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 12, color: C.muted }}>{selCount} rule{selCount !== 1 ? "s" : ""} selected</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <SecBtn onClick={onReset}>Start Over</SecBtn>
+          <PrimaryBtn onClick={onConfirm} disabled={selCount === 0}>Confirm Rules</PrimaryBtn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function PolicySetDrawer({ open, onClose, isPlus = true, onSave }: PolicySetDrawerProps) {
-  const [view, setView]               = useState("main");
-  const [psName, setPsName]           = useState("");
-  const [states, setStates]           = useState<string[]>([]);
-  const [products, setProducts]       = useState<string[]>([]);
+  const [view,        setView]        = useState("main");
+  const [psName,      setPsName]      = useState("");
+  const [orgWide,     setOrgWide]     = useState(true);
+  const [states,      setStates]      = useState<string[]>([]);
+  const [products,    setProducts]    = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [regDone, setRegDone]         = useState(false);
-  const [tasks, setTasks]             = useState<Task[]>([]);
-  const [orgDone, setOrgDone]         = useState(false);
+  const [regDone,     setRegDone]     = useState(false);
+  const [tasks,       setTasks]       = useState<Task[]>([]);
+  const [orgDone,     setOrgDone]     = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [isNewTask, setIsNewTask]     = useState(false);
+  const [isNewTask,   setIsNewTask]   = useState(false);
 
-  const resetAll = () => {
-    setView("main"); setPsName("");
-    setStates([]); setProducts([]); setSelectedIds([]); setRegDone(false);
-    setTasks([]); setOrgDone(false); setEditingTask(null); setIsNewTask(false);
-  };
-
+  const resetAll = () => { setView("main"); setPsName(""); setOrgWide(true); setStates([]); setProducts([]); setSelectedIds([]); setRegDone(false); setTasks([]); setOrgDone(false); setEditingTask(null); setIsNewTask(false); };
   const skipToGWBR = () => { setSelectedIds(GWBR_POOL.map(g => g.id)); setView("gwbr"); };
-
-  const startCompile = () => {
-    setView("compiling");
-    const pool = GWBR_POOL.filter(g => states.includes(g.state));
-    setTimeout(() => { setSelectedIds(pool.map(g => g.id)); setView("gwbr"); }, 1500);
-  };
-
-  const handleSave = () => {
-    onSave({ name: psName, gwbrIds: selectedIds, states, products, tasks });
-    resetAll();
-  };
-
-  const openAddTask = () => {
-    setEditingTask({ id: uid(), name: "", type: "internal", owner: "producer", approval: "no", components: [] });
-    setIsNewTask(true);
-    setView("taskEditor");
-  };
-
-  const openEditTask = (task: Task) => {
-    setEditingTask({ ...task });
-    setIsNewTask(false);
-    setView("taskEditor");
-  };
-
-  const saveTask = () => {
-    if (!editingTask) return;
-    if (isNewTask) {
-      setTasks(prev => [...prev, editingTask]);
-    } else {
-      setTasks(prev => prev.map(t => t.id === editingTask.id ? editingTask : t));
-    }
-    setEditingTask(null);
-    setView("taskSequencer");
-  };
+  const startCompile = () => { setView("compiling"); const pool = GWBR_POOL.filter(g => states.includes(g.state)); setTimeout(() => { setSelectedIds(pool.map(g => g.id)); setView("gwbr"); }, 1500); };
+  const handleSave = () => { onSave({ name: psName, orgWide, gwbrIds: selectedIds, states, products, tasks }); resetAll(); };
+  const openAddTask  = () => { setEditingTask({ id: uid(), name: "", type: "internal", owner: "producer", approval: "no", components: [] }); setIsNewTask(true);  setView("taskEditor"); };
+  const openEditTask = (task: Task) => { setEditingTask({ ...task }); setIsNewTask(false); setView("taskEditor"); };
+  const saveTask = () => { if (!editingTask) return; if (isNewTask) setTasks(prev => [...prev, editingTask]); else setTasks(prev => prev.map(t => t.id === editingTask.id ? editingTask : t)); setEditingTask(null); setView("taskSequencer"); };
 
   const hp = (() => {
-    if (view === "main")          return { title: psName || "New Policy Set",       subtitle: "Define requirements for this policy set",  onBack: undefined };
-    if (view === "states")        return { title: "Regulatory Requirements",         subtitle: "Step 1 of 2 — Select states",              onBack: () => setView("main") };
-    if (view === "products")      return { title: "Regulatory Requirements",         subtitle: "Step 2 of 2 — Select products",            onBack: () => setView("states") };
-    if (view === "compiling")     return { title: "Compiling Rules…",                subtitle: undefined,                                  onBack: undefined };
-    if (view === "gwbr")          return { title: "Gateway Business Rules",           subtitle: `${GWBR_POOL.length} rules in system`,      onBack: () => setView("main") };
-    if (view === "taskSequencer") return { title: "Organizational Requirements",     subtitle: "Manage & sequence tasks",                  onBack: () => setView("main") };
-    if (view === "taskEditor")    return { title: isNewTask ? "New Task" : "Edit Task", subtitle: "Configure task header & components",    onBack: () => { setEditingTask(null); setView("taskSequencer"); } };
+    if (view === "main")          return { title: psName || "New Policy Set",          subtitle: "Define requirements for this policy set",  onBack: undefined };
+    if (view === "states")        return { title: "Regulatory Requirements",            subtitle: "Step 1 of 2 — Select states",              onBack: () => setView("main") };
+    if (view === "products")      return { title: "Regulatory Requirements",            subtitle: "Step 2 of 2 — Select products",            onBack: () => setView("states") };
+    if (view === "compiling")     return { title: "Compiling Rules…",                   subtitle: undefined,                                  onBack: undefined };
+    if (view === "gwbr")          return { title: "Gateway Business Rules",              subtitle: `${GWBR_POOL.length} rules in system`,      onBack: () => setView("main") };
+    if (view === "taskSequencer") return { title: "Organizational Requirements",        subtitle: "Manage & sequence tasks",                  onBack: () => setView("main") };
+    if (view === "taskEditor")    return { title: isNewTask ? "New Task" : "Edit Task", subtitle: "Configure task header & components",       onBack: () => { setEditingTask(null); setView("taskSequencer"); } };
     return { title: "", subtitle: undefined, onBack: undefined };
   })();
 
   return (
     <Drawer open={open} onClose={onClose} title={hp.title} subtitle={hp.subtitle} onBack={hp.onBack}>
-
       {view === "main" && (
         <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* Policy set name */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 500, color: C.textMed, marginBottom: 6 }}>Policy set name <span style={{ color: C.danger }}>*</span></div>
             <input value={psName} onChange={e => setPsName(e.target.value)} placeholder="e.g. Licensed P&C Producer" style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
           </div>
 
+          {/* Org-wide / Optional toggle — directly below policy name */}
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+            <input type="checkbox" checked={orgWide} onChange={e => setOrgWide(e.target.checked)} style={{ width: 14, height: 14, accentColor: C.accent, cursor: "pointer", flexShrink: 0 }} />
+             <span style={{ fontSize: 13, fontWeight: 500, color: C.text }}>Org-wide requirement</span>
+             <span style={{ fontSize: 12, color: C.muted }}>— applied to all producers automatically</span>
+          </label>
+
+          {/* Regulatory Requirements */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: C.textMed, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Regulatory Requirements</div>
             {isPlus ? (
               <div onClick={() => setView(regDone ? "gwbr" : "states")} style={{ background: C.surface, border: `1.5px solid ${regDone ? C.accent : C.border}`, borderRadius: 12, padding: 18, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 10, background: regDone ? C.accentBg : C.bg, border: `1px solid ${regDone ? C.accentLight + "44" : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{regDone ? "✓" : "⚖"}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: regDone ? C.accent : C.text }}>{regDone ? `${selectedIds.length} Gateway Business Rules` : "Add regulatory requirements"}</div>
-                  <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{regDone ? (states.length > 0 ? `${states.length} states · ${products.length} products` : "Manually curated") : "States, products, and licensing rules"}</div>
-                </div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: regDone ? C.accent : C.text }}>{regDone ? `${selectedIds.length} Gateway Business Rules` : "Add regulatory requirements"}</div><div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{regDone ? (states.length > 0 ? `${states.length} states · ${products.length} products` : "Manually curated") : "States, products, and licensing rules"}</div></div>
                 <span style={{ color: C.muted, fontSize: 13 }}>›</span>
               </div>
             ) : (
@@ -794,27 +777,21 @@ export function PolicySetDrawer({ open, onClose, isPlus = true, onSave }: Policy
             )}
           </div>
 
+          {/* Organizational Requirements */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: C.textMed, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Organizational Requirements</div>
             <div onClick={() => setView("taskSequencer")} style={{ background: C.surface, border: `1.5px solid ${orgDone ? C.accent : C.border}`, borderRadius: 12, padding: 18, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
               <div style={{ width: 40, height: 40, borderRadius: 10, background: orgDone ? C.accentBg : C.bg, border: `1px solid ${orgDone ? C.accentLight + "44" : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{orgDone ? "✓" : "⊞"}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: orgDone ? C.accent : C.text }}>{orgDone ? `${tasks.length} task${tasks.length !== 1 ? "s" : ""} configured` : "Add organizational requirements"}</div>
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{orgDone ? tasks.map(t => t.name).join(", ") : "Internal onboarding tasks and processes"}</div>
-              </div>
+              <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: orgDone ? C.accent : C.text }}>{orgDone ? `${tasks.length} task${tasks.length !== 1 ? "s" : ""} configured` : "Add organizational requirements"}</div><div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{orgDone ? tasks.map(t => t.name).join(", ") : "Internal onboarding tasks and processes"}</div></div>
               <span style={{ color: C.muted, fontSize: 13 }}>›</span>
             </div>
           </div>
 
-          {(regDone || orgDone) && psName.trim() && (
-            <PrimaryBtn onClick={handleSave} style={{ width: "100%" }}>Save Policy Set</PrimaryBtn>
-          )}
+          {(regDone || orgDone) && psName.trim() && <PrimaryBtn onClick={handleSave} style={{ width: "100%" }}>Save Policy Set</PrimaryBtn>}
         </div>
       )}
-
       {view === "states"   && <StateSelector selected={states} onChange={setStates} onNext={() => setView("products")} onSkip={skipToGWBR} />}
       {view === "products" && <ProductSelector selected={products} onChange={setProducts} onNext={() => { setView("compiling"); startCompile(); }} onSkip={skipToGWBR} />}
-
       {view === "compiling" && (
         <div style={{ padding: "48px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}>
           <div style={{ width: 56, height: 56, borderRadius: "50%", background: C.accentBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -827,23 +804,9 @@ export function PolicySetDrawer({ open, onClose, isPlus = true, onSave }: Policy
           <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         </div>
       )}
-
-      {view === "gwbr" && (
-        <GWBRList
-          selectedIds={selectedIds}
-          onChangeSelected={setSelectedIds}
-          onConfirm={() => { setRegDone(true); setView("main"); }}
-          onReset={() => { setStates([]); setProducts([]); setSelectedIds([]); setRegDone(false); setView("states"); }}
-        />
-      )}
-
-      {view === "taskSequencer" && (
-        <TaskSequencer tasks={tasks} onChangeTasks={setTasks} onConfirm={() => { setOrgDone(true); setView("main"); }} onAddTask={openAddTask} onEditTask={openEditTask} />
-      )}
-
-      {view === "taskEditor" && editingTask && (
-        <TaskEditor task={editingTask} onChange={setEditingTask} onBack={() => { setEditingTask(null); setView("taskSequencer"); }} onDone={saveTask} />
-      )}
+      {view === "gwbr" && <GWBRList selectedIds={selectedIds} onChangeSelected={setSelectedIds} onConfirm={() => { setRegDone(true); setView("main"); }} onReset={() => { setStates([]); setProducts([]); setSelectedIds([]); setRegDone(false); setView("states"); }} />}
+      {view === "taskSequencer" && <TaskSequencer tasks={tasks} onChangeTasks={setTasks} onConfirm={() => { setOrgDone(true); setView("main"); }} onAddTask={openAddTask} onEditTask={openEditTask} />}
+      {view === "taskEditor" && editingTask && <TaskEditor task={editingTask} onChange={setEditingTask} onBack={() => { setEditingTask(null); setView("taskSequencer"); }} onDone={saveTask} />}
     </Drawer>
   );
 }

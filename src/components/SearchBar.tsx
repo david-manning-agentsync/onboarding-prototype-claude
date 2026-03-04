@@ -1,13 +1,13 @@
 import { C } from "../theme";
 
 interface SearchBarProps {
-  placeholder: string;
+  placeholder?: string;
   value: string;
   onChange: (v: string) => void;
   style?: React.CSSProperties;
 }
 
-export function SearchBar({ placeholder, value, onChange, style }: SearchBarProps) {
+export function SearchBar({ placeholder = "Search…", value, onChange, style }: SearchBarProps) {
   return (
     <div style={{ position: "relative", ...style }}>
       <span style={{

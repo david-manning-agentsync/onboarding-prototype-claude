@@ -1,15 +1,27 @@
 import { useState } from "react";
-import { useVersion } from "./UI";
+import { useVersion, ActiveFilters } from "./UI";
 import { C } from "../theme";
+import { SearchBar } from "./SearchBar";
+import { FilterDrawer } from "./FilterDrawer";
+import { ColumnDrawer } from "./ColumnDrawer";
+import { useColumnManager } from "../hooks/useColumnManager";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ColDef<T = any> {
   key: string;
   label: string;
   render?: (value: any, row: T) => React.ReactNode;
-  /** When true the column is hidden from the table */
   hidden?: boolean;
-  /** When true this column is not sortable */
   noSort?: boolean;
+  /** Opt out of search matching for this column (e.g. pure icon/action columns) */
+  noSearch?: boolean;
+}
+
+export interface FilterDef {
+  key: string;
+  label: string;
+  options: string[];
 }
 
 interface TableProps<T extends { id: any }> {
@@ -21,11 +33,64 @@ interface TableProps<T extends { id: any }> {
   selected?: Set<any>;
   onToggle?: (id: any) => void;
   onToggleAll?: (rows: T[]) => void;
-  /** Default sort column key */
   defaultSortKey?: string;
-  /** Default sort direction */
   defaultSortDir?: "asc" | "desc";
 }
+
+// ─── TableView props ──────────────────────────────────────────────────────────
+
+export interface TableViewProps<T extends { id: any }> {
+  title: string;
+  subtitle?: string;
+  allCols: ColDef<T>[];
+  rows: T[];
+  totalCount: number;
+  recordLabel?: string;
+  filterDefs?: FilterDef[];
+  search: string;
+  onSearch: (v: string) => void;
+  applied: Record<string, string[]>;
+  onApply: (f: Record<string, string[]>) => void;
+  onRow?: (row: T) => void;
+  activeId?: any;
+  selectable?: boolean;
+  selected?: Set<any>;
+  onToggle?: (id: any) => void;
+  onToggleAll?: (rows: T[]) => void;
+  defaultSortKey?: string;
+  primaryAction?: React.ReactNode;
+  banner?: React.ReactNode;
+}
+
+// ─── Search helper ────────────────────────────────────────────────────────────
+// Filters rows by matching the search term against all searchable column values.
+// For columns with a render function, we call it and use the string result if
+// it's a plain string; otherwise we fall back to the raw field value.
+// Columns marked noSearch are skipped (e.g. pure icon or action columns).
+
+function matchesSearch<T extends { id: any }>(
+  row: T,
+  cols: ColDef<T>[],
+  query: string,
+): boolean {
+  if (!query.trim()) return true;
+  const q = query.toLowerCase();
+  return cols.some(col => {
+    if (col.noSearch) return false;
+    const raw = row[col.key as keyof T];
+    let text = "";
+    if (col.render) {
+      const result = col.render(raw, row);
+      // Only use render output if it resolves to a plain string
+      text = typeof result === "string" ? result : String(raw ?? "");
+    } else {
+      text = String(raw ?? "");
+    }
+    return text.toLowerCase().includes(q);
+  });
+}
+
+// ─── Table primitive ──────────────────────────────────────────────────────────
 
 export function Table<T extends { id: any }>({
   cols, rows, onRow, activeId,
@@ -121,6 +186,120 @@ export function Table<T extends { id: any }>({
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ─── TableView ────────────────────────────────────────────────────────────────
+// Full-view table surface. Owns column visibility, drawer open/close, and
+// search filtering. Views pass ALL rows (pre-filtered by applied filters only);
+// TableView handles search matching internally across all visible columns.
+
+export function TableView<T extends { id: any }>({
+  title, subtitle,
+  allCols, rows, totalCount, recordLabel = "records",
+  filterDefs = [],
+  search, onSearch,
+  applied, onApply,
+  onRow, activeId,
+  selectable, selected, onToggle, onToggleAll,
+  defaultSortKey,
+  primaryAction,
+  banner,
+}: TableViewProps<T>) {
+  const [filterOpen,       setFilterOpen]       = useState(false);
+  const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
+  const [pending,          setPending]          = useState<Record<string, string[]>>({});
+
+  const { visibleCols, cols, toggleCol, reorder, reset } = useColumnManager(allCols);
+
+  // Search filtering: applied here so all views get it for free.
+  // We match against visibleCols so hidden columns don't pollute results.
+  const searchedRows = rows.filter(row => matchesSearch(row, visibleCols, search));
+
+  const activeFilterCount = Object.values(applied).filter(v => v?.length > 0).length;
+  const clearFilters      = () => onApply({});
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* Header row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>{title}</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>
+            {searchedRows.length} of {totalCount} {recordLabel}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => setColumnDrawerOpen(true)}
+            style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: C.textMed, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}
+          >
+            ⊞ Columns
+          </button>
+          <button
+            onClick={() => { setPending(applied); setFilterOpen(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: activeFilterCount > 0 ? C.accent : C.textMed, background: activeFilterCount > 0 ? C.accentBg : C.surface, border: `1px solid ${activeFilterCount > 0 ? C.accent + "55" : C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}
+          >
+            ⚙ Filters{activeFilterCount > 0 && (
+              <span style={{ background: C.accent, color: "#fff", borderRadius: 99, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          {primaryAction}
+        </div>
+      </div>
+
+      {/* Search + active filter chips */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <SearchBar value={search} onChange={onSearch} />
+        <ActiveFilters
+          filters={applied}
+          onRemove={(k, v) => onApply({ ...applied, [k]: (applied[k] || []).filter(x => x !== v) })}
+          onClear={clearFilters}
+        />
+      </div>
+
+      {/* Optional banner */}
+      {banner}
+
+      {/* Table — receives already-searched rows */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <Table
+          cols={visibleCols}
+          rows={searchedRows}
+          onRow={onRow}
+          activeId={activeId}
+          selectable={selectable}
+          selected={selected}
+          onToggle={onToggle}
+          onToggleAll={onToggleAll}
+          defaultSortKey={defaultSortKey}
+        />
+      </div>
+
+      {/* Drawers */}
+      {filterDefs.length > 0 && (
+        <FilterDrawer
+          open={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          filterDefs={filterDefs}
+          pending={pending}
+          setPending={setPending}
+          onApply={f => { onApply(f); setFilterOpen(false); }}
+          onClear={clearFilters}
+        />
+      )}
+      <ColumnDrawer
+        open={columnDrawerOpen}
+        onClose={() => setColumnDrawerOpen(false)}
+        cols={cols}
+        onToggle={toggleCol}
+        onReorder={reorder}
+        onReset={() => reset(allCols)}
+      />
     </div>
   );
 }

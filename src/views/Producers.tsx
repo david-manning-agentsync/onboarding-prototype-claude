@@ -1,23 +1,31 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { C, Badge } from "../theme";
 import type { Producer, SavedView } from "../data";
-import { useVersion, ActiveFilters } from "../components/UI";
-import { SearchBar } from "../components/SearchBar";
-import { FilterDrawer } from "../components/FilterDrawer";
-import { Table } from "../components/Table";
+import { useVersion } from "../components/UI";
+import { TableView } from "../components/Table";
+import type { ColDef, FilterDef } from "../components/Table";
 import { SaveViewModal } from "../components/SaveViewModal";
 import { AIChat } from "../components/AIChat";
 import type { AIChatMessage, AIChatAction } from "../components/AIChat";
 import { BottomBar } from "../components/BottomBar";
 import { TaskDrawer } from "../components/TaskDrawer";
 import { InviteDrawer, BulkInviteDrawer } from "../components/InviteDrawers";
-import { ColumnDrawer } from "../components/ColumnDrawer";
-import { useColumnManager } from "../hooks/useColumnManager";
 
-const PROD_FILTER_DEFS = [
+const PROD_FILTER_DEFS: FilterDef[] = [
   { key: "classification", label: "Classification", options: ["Needs License", "Needs LOAs", "Reg Tasks Only", "Org Requirements"] },
   { key: "status",         label: "Status",         options: ["Invited", "In Progress", "Waiting/Blocked", "Completed", "Terminated"] },
   { key: "resident",       label: "Resident State", options: ["AZ","CA","CO","FL","GA","IL","MI","MN","NC","NJ","NY","OH","PA","TN","TX","WA"] },
+];
+
+// invited and lastTask are date/activity metadata — excluded from search
+const ALL_COLS: ColDef<Producer>[] = [
+  { key: "name",           label: "Producer",       render: (v) => <span style={{ color: C.accentLight, fontWeight: 500 }}>{v}</span> },
+  { key: "npn",            label: "NPN" },
+  { key: "classification", label: "Classification", render: (v) => <Badge label={v} /> },
+  { key: "status",         label: "Status",         render: (v) => <Badge label={v} /> },
+  { key: "resident",       label: "State" },
+  { key: "invited",        label: "Invited",        noSearch: true },
+  { key: "lastTask",       label: "Last Activity",  noSearch: true },
 ];
 
 const AI_PROMPTS = [
@@ -50,6 +58,7 @@ summary should be a short human-readable explanation.`,
 }
 
 // ─── Producer Detail ──────────────────────────────────────────────────────────
+
 export function ProducerDetail({ producer: init, onBack, allProducers, setAllProducers }: {
   producer: Producer;
   onBack: () => void;
@@ -172,6 +181,7 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
 }
 
 // ─── Producers View ───────────────────────────────────────────────────────────
+
 export function ProducersView({ initFilter, setDetailState, producers, setAllProducers, onSaveView }: {
   initFilter: Record<string, string[]>;
   setDetailState: (s: { producer: Producer } | null) => void;
@@ -180,13 +190,11 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
   onSaveView: (v: SavedView) => void;
 }) {
   const version = useVersion();
-  const isAI   = version === "ai";
+  const isAI    = version === "ai";
   const isPlus  = version === "post-mvp" || isAI;
 
   const [search,         setSearch]         = useState("");
   const [applied,        setApplied]        = useState<Record<string, string[]>>(initFilter || {});
-  const [pending,        setPending]        = useState<Record<string, string[]>>(initFilter || {});
-  const [filterOpen,     setFilterOpen]     = useState(false);
   const [inviteOpen,     setInviteOpen]     = useState(false);
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
   const [inviteMenuOpen, setInviteMenuOpen] = useState(false);
@@ -195,7 +203,6 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
   const [aiOpen,         setAiOpen]         = useState(isAI);
   const [aiFilterIds,    setAiFilterIds]    = useState<string[] | null>(null);
   const [pendingAction,  setPendingAction]  = useState<AIChatAction | null>(null);
-  const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
   const inviteMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -205,21 +212,18 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
   }, [inviteMenuOpen]);
 
   useEffect(() => {
-    if (initFilter && Object.keys(initFilter).length > 0) { setApplied(initFilter); setPending(initFilter); }
+    if (initFilter && Object.keys(initFilter).length > 0) { setApplied(initFilter); }
   }, [initFilter]);
 
-  const filtered = useMemo(() => producers.filter(p => {
-    const q = search.toLowerCase();
-    return (!q || p.name.toLowerCase().includes(q) || p.npn.includes(q))
-      && (!applied.classification?.length || applied.classification.includes(p.classification))
-      && (!applied.status?.length         || applied.status.includes(p.status))
-      && (!applied.resident?.length       || applied.resident.includes(p.resident));
-  }), [search, applied, producers]);
+  // Search is handled by TableView — views only need to apply filter logic
+  const filteredRows = useMemo(() => producers.filter(p =>
+    (!applied.classification?.length || applied.classification.includes(p.classification))
+    && (!applied.status?.length      || applied.status.includes(p.status))
+    && (!applied.resident?.length    || applied.resident.includes(p.resident))
+  ), [applied, producers]);
 
-  const activeCount  = Object.values(applied).filter(v => v?.length > 0).length;
-  const hasFilters   = activeCount > 0 || !!search;
-  const selCount     = filtered.filter(p => selected.has(p.id)).length;
-  const clearFilters = () => { setApplied({}); setPending({}); };
+  const hasFilters = Object.values(applied).some(v => v?.length > 0) || !!search;
+  const selCount   = filteredRows.filter(p => selected.has(p.id)).length;
 
   const toggleOne = (id: number) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleAll = (rows: Producer[]) => { const allS = rows.every(r => selected.has(r.id)); setSelected(allS ? new Set() : new Set(rows.map(r => r.id))); };
@@ -253,75 +257,61 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
     }).finally(() => setLoading(false));
   };
 
-  useEffect(() => {
-  if (selCount > 0 && aiOpen) setAiOpen(false);
-}, [selCount]);
+  useEffect(() => { if (selCount > 0 && aiOpen) setAiOpen(false); }, [selCount]);
 
   const showActionBar = isPlus && selCount > 0 && !aiOpen;
   const bottomPad     = (aiOpen || showActionBar) ? 72 : 24;
 
-  const ALL_COLS = [
-  { key: "name",           label: "Producer",       render: (v: any) => <span style={{ color: C.accentLight, fontWeight: 500 }}>{v}</span> },
-  { key: "npn",            label: "NPN" },
-  { key: "classification", label: "Classification", render: (v: any) => <Badge label={v} /> },
-  { key: "status",         label: "Status",         render: (v: any) => <Badge label={v} /> },
-  { key: "resident",       label: "State" },
-  { key: "invited",        label: "Invited" },
-  { key: "lastTask",       label: "Last Activity" },
-];
-    const { visibleCols, cols, toggleCol, reorder, reset } = useColumnManager(ALL_COLS);
+  // Invite menu — kept as a custom primaryAction since it has a split-button dropdown
+  const inviteAction = (
+    <div ref={inviteMenuRef} style={{ position: "relative" }}>
+      <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.accent}` }}>
+        <button onClick={() => setInviteOpen(true)} style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: C.accent, border: "none", padding: "7px 14px", cursor: "pointer", borderRight: `1px solid ${C.accentLight}` }}>+ Invite Producer</button>
+        <button onClick={() => setInviteMenuOpen(v => !v)} style={{ fontSize: 12, color: "#fff", background: C.accent, border: "none", padding: "7px 10px", cursor: "pointer" }}>▾</button>
+      </div>
+      {inviteMenuOpen && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.12)", zIndex: 30, minWidth: 170, overflow: "hidden" }}>
+          <div onClick={() => { setInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>👤 Invite producer</div>
+          <div style={{ height: 1, background: C.border }} />
+          <div onClick={() => { setBulkInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>📋 Bulk invite via CSV</div>
+        </div>
+      )}
+    </div>
+  );
+
+  const saveViewAction = isPlus && hasFilters ? (
+    <button onClick={() => setSaveOpen(true)} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, color: C.accent, background: C.accentBg, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>⊕ Save view</button>
+  ) : undefined;
+
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingBottom: bottomPad }}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Producers</h2>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted }}>{filtered.length} of {producers.length} producers</p>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {isPlus && hasFilters && (
-              <button onClick={() => setSaveOpen(true)} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, color: C.accent, background: C.accentBg, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>⊕ Save view</button>
-            )}
-            <button onClick={() => setColumnDrawerOpen(true)}
-              style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: C.textMed, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
-              ⊞ Columns
-            </button>
-            <button onClick={() => { setPending(applied); setFilterOpen(true); }}
-              style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: activeCount > 0 ? C.accent : C.textMed, background: activeCount > 0 ? C.accentBg : C.surface, border: `1px solid ${activeCount > 0 ? C.accent + "55" : C.border}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>
-              ⚙ Filters {activeCount > 0 && <span style={{ background: C.accent, color: "#fff", borderRadius: 99, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{activeCount}</span>}
-            </button>
-            <div ref={inviteMenuRef} style={{ position: "relative" }}>
-              <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.accent}` }}>
-                <button onClick={() => setInviteOpen(true)} style={{ fontSize: 13, fontWeight: 600, color: "#fff", background: C.accent, border: "none", padding: "7px 14px", cursor: "pointer", borderRight: `1px solid ${C.accentLight}` }}>+ Invite Producer</button>
-                <button onClick={() => setInviteMenuOpen(v => !v)} style={{ fontSize: 12, color: "#fff", background: C.accent, border: "none", padding: "7px 10px", cursor: "pointer" }}>▾</button>
-              </div>
-              {inviteMenuOpen && (
-                <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.12)", zIndex: 30, minWidth: 170, overflow: "hidden" }}>
-                  <div onClick={() => { setInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>👤 Invite producer</div>
-                  <div style={{ height: 1, background: C.border }} />
-                  <div onClick={() => { setBulkInviteOpen(true); setInviteMenuOpen(false); }} style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>📋 Bulk invite via CSV</div>
-                </div>
-              )}
+      <div style={{ paddingBottom: bottomPad }}>
+        <TableView
+          title="Producers"
+          allCols={ALL_COLS}
+          rows={filteredRows}
+          totalCount={producers.length}
+          recordLabel="producers"
+          filterDefs={PROD_FILTER_DEFS}
+          search={search}
+          onSearch={setSearch}
+          applied={applied}
+          onApply={setApplied}
+          onRow={row => setDetailState({ producer: row })}
+          selectable
+          selected={selected as any}
+          onToggle={toggleOne as any}
+          onToggleAll={toggleAll as any}
+          defaultSortKey="name"
+          primaryAction={
+            <div style={{ display: "flex", gap: 8 }}>
+              {saveViewAction}
+              {inviteAction}
             </div>
-          </div>
-        </div>
-
-        {/* Search + filters */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <SearchBar placeholder="Search by name or NPN…" value={search} onChange={setSearch} />
-          <ActiveFilters filters={applied} onRemove={(k, v) => setApplied(prev => ({ ...prev, [k]: (prev[k] || []).filter(x => x !== v) }))} onClear={clearFilters} />
-        </div>
-
-        {/* Table */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-          <Table selectable onToggle={toggleOne} onToggleAll={toggleAll} selected={selected}
-           onRow={row => setDetailState({ producer: row })}
-           cols={visibleCols} rows={filtered} />
-        </div>
+          }
+        />
       </div>
 
-      {/* Bottom layer */}
       {isAI && !aiOpen && (
         <BottomBar
           selCount={selCount}
@@ -332,7 +322,7 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
             { label: "", actions: [
               { label: "Assign Policy Set", onClick: () => setSelected(new Set()) },
               { label: "Send Reminder",     onClick: () => setSelected(new Set()) },
-              { label: "Terminate",         highlight: false, muted: false, onClick: handleTerminate },
+              { label: "Terminate",         onClick: handleTerminate },
             ]},
           ]}
         />
@@ -354,11 +344,9 @@ export function ProducersView({ initFilter, setDetailState, producers, setAllPro
         />
       )}
 
-      <FilterDrawer open={filterOpen} onClose={() => setFilterOpen(false)} filterDefs={PROD_FILTER_DEFS} pending={pending} setPending={setPending} onApply={f => setApplied(f)} onClear={clearFilters} />
       <InviteDrawer open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <BulkInviteDrawer open={bulkInviteOpen} onClose={() => setBulkInviteOpen(false)} />
       {saveOpen && <SaveViewModal filters={applied} onClose={() => setSaveOpen(false)} onSave={name => { onSaveView({ id: `pv${Date.now()}`, name, filters: applied, table: "producers" }); setSaveOpen(false); }} />}
-      <ColumnDrawer open={columnDrawerOpen} onClose={() => setColumnDrawerOpen(false)} cols={cols} onToggle={toggleCol} onReorder={reorder} onReset={() => reset(ALL_COLS)} />
     </>
   );
 }
