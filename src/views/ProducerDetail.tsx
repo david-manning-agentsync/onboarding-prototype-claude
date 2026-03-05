@@ -696,7 +696,6 @@ export function ProducerDetail({ producer: init, onBack, allProducers, setAllPro
 }) {
   const version  = useVersion();
   const producer = allProducers.find(p => p.id === init.id) || init;
-  const hasNpn = true;
 
   const tabs = [
   { id: "tasks",   label: "Tasks" },
